@@ -32,13 +32,12 @@ from backtest.reporter import print_strategy_report, save_results_csv
 # ── Strategy registry ─────────────────────────────────────────────────────────
 # Maps class name → module path. Add new intraday strategies here.
 STRATEGY_MODULE_MAP: dict[str, str] = {
-    # Populated in Plan 2 — intraday strategy implementations
-    # "ScalpVWAPStrategy":         "crypto_bot.core.signals.strategies.intraday.scalp_vwap",
-    # "OpeningRangeBreakoutStrategy": "crypto_bot.core.signals.strategies.intraday.orb",
-    # "MomentumSpikeStrategy":     "crypto_bot.core.signals.strategies.intraday.momentum_spike",
-    # "LiquidationCascadeStrategy":"crypto_bot.core.signals.strategies.intraday.liquidation_cascade",
-    # "MicroStructureReversionStrategy": "crypto_bot.core.signals.strategies.intraday.microstructure_reversion",
-    # "SessionBreakoutStrategy":   "crypto_bot.core.signals.strategies.intraday.session_breakout",
+    "LiquiditySweepReversalStrategy":              "crypto_bot.core.signals.strategies.intraday.lsr",
+    "OpeningRangeBreakoutStrategy":                "crypto_bot.core.signals.strategies.intraday.orb_sb",
+    "VWAPDeltaConfluenceStrategy":                 "crypto_bot.core.signals.strategies.intraday.mvdc",
+    "FairValueGapStrategy":                        "crypto_bot.core.signals.strategies.intraday.fvg",
+    "LiquidationCascadeMomentumStrategy":          "crypto_bot.core.signals.strategies.intraday.lcm",
+    "MicrostructureConsolidationBreakoutStrategy": "crypto_bot.core.signals.strategies.intraday.mcb",
 }
 
 CONFIG_PATH = "config/intraday.yaml"
