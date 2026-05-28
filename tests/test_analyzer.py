@@ -221,3 +221,49 @@ def test_reporter_print_strategy_report_with_wf(capsys):
     print_strategy_report(r, wf=wf)
     captured = capsys.readouterr().out
     assert "OOS" in captured
+
+
+# ── main.py CLI arg parsing ───────────────────────────────────────────────────
+
+def test_main_help_exits_cleanly():
+    """main.py --help exits with code 0."""
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert result.returncode == 0
+    assert "--mode" in result.stdout
+
+def test_main_mode_choices_include_all_modes():
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert "intraday" in result.stdout
+    assert "swing"    in result.stdout
+    assert "spot"     in result.stdout
+    assert "analyze"  in result.stdout
+
+def test_main_export_choices():
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert "--export" in result.stdout
+    assert "csv"  in result.stdout
+    assert "html" in result.stdout
+
+def test_main_analyze_mode_flag():
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert "--analyze-mode" in result.stdout
