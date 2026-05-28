@@ -23,7 +23,7 @@
 ```bash
 # Install dependencies
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-linux.txt
 
 # Run full backtest (fetches data automatically if cache is empty)
 python main.py
@@ -55,8 +55,8 @@ python -m venv .venv
 ::   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .venv\Scripts\Activate.ps1
 
-:: Step 3 — Install dependencies
-pip install -r requirements.txt
+:: Step 3 — Install dependencies (Windows-specific file — avoids Linux CUDA packages)
+pip install -r requirements-windows.txt
 
 :: Step 4 — Run (use --no-parallel on Windows to avoid multiprocessing issues)
 python main.py --no-parallel --no-optimize --no-walk-forward

@@ -30,6 +30,18 @@ A production-quality backtesting engine for crypto perpetual futures strategies,
 
 ---
 
+## Requirements Files
+
+| File | Use on |
+|------|--------|
+| `requirements-windows.txt` | Windows |
+| `requirements-linux.txt` | Linux / macOS |
+| `requirements.txt` | Cross-platform fallback (same as Windows file) |
+
+The only difference is `requirements-linux.txt` includes `nvidia-nccl-cu12` (a CUDA GPU library present in the Linux dev environment). It does not exist as a Windows package and will error if you try to install it on Windows.
+
+---
+
 ## Setup — Linux / macOS
 
 ### Prerequisites
@@ -50,8 +62,8 @@ python3 -m venv .venv
 # 3. Activate the virtual environment
 source .venv/bin/activate
 
-# 4. Install dependencies
-pip install -r requirements.txt
+# 4. Install dependencies (Linux-specific file)
+pip install -r requirements-linux.txt
 
 # 5. Verify setup
 python main.py --help
@@ -83,8 +95,8 @@ python -m venv .venv
 :: 3. Activate the virtual environment (PowerShell — if above doesn't work)
 .venv\Scripts\Activate.ps1
 
-:: 4. Install dependencies
-pip install -r requirements.txt
+:: 4. Install dependencies (Windows-specific file)
+pip install -r requirements-windows.txt
 
 :: 5. Verify setup
 python main.py --help
