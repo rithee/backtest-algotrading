@@ -334,3 +334,39 @@ class TestIchimokuCloudStrategy:
         s = IchimokuCloudStrategy({})
         for k, spec in s.param_space.items():
             assert spec[0] <= s.default_params()[k] <= spec[1]
+
+
+from crypto_bot.core.signals.strategies.stoch_rsi import StochRSIStrategy
+
+
+class TestStochRSIStrategy:
+    _p = {
+        "rsi_period": 14, "stoch_period": 14,
+        "smooth_k": 3, "smooth_d": 3, "atr_period": 14,
+    }
+
+    def test_produces_long_in_uptrend(self):
+        df = make_candles(300, trend="up")
+        sigs = StochRSIStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "LONG"]) > 0
+
+    def test_produces_short_from_overbought(self):
+        # StochRSI is mean-reversion: SHORT fires when RSI is overbought (high RSI = uptrend/choppy)
+        df = make_candles(300, trend="flat", seed=0)
+        sigs = StochRSIStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "SHORT"]) > 0
+
+    def test_no_signals_short_data(self):
+        df = make_candles(20, trend="up")
+        assert StochRSIStrategy(self._p).generate_signals(df) == []
+
+    def test_valid_directions(self):
+        df = make_candles(300, trend="up")
+        valid = {"LONG", "SHORT", "EXIT_LONG", "EXIT_SHORT"}
+        for s in StochRSIStrategy(self._p).generate_signals(df):
+            assert s.direction in valid
+
+    def test_default_params_in_space(self):
+        s = StochRSIStrategy({})
+        for k, spec in s.param_space.items():
+            assert spec[0] <= s.default_params()[k] <= spec[1]
