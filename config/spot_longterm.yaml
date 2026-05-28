@@ -1,0 +1,58 @@
+mode: spot_longterm
+
+exchange:
+  name: binance
+  market: spot
+  testnet: false
+
+backtest:
+  symbols:
+    - "BTCUSDT"
+    - "ETHUSDT"
+    - "BNBUSDT"
+    - "SOLUSDT"
+    - "XRPUSDT"
+    - "ADAUSDT"
+    - "AVAXUSDT"
+    - "DOGEUSDT"
+    - "DOTUSDT"
+    - "MATICUSDT"
+  timeframes: ["1d", "1w"]
+  primary_tf: "1w"
+  confirm_tf: "1d"
+  start_date: "2019-01-01"
+  end_date: "2024-12-31"
+  initial_capital_per_strategy: 1000.0
+  fees_pct: 0.001
+  slippage_pct: 0.001
+
+leverage:
+  max: 1
+  default: 1
+
+risk:
+  max_position_pct: 0.25
+  stop_loss_atr_multiplier: 4.0
+  take_profit_atr_multiplier: 0.0
+  max_drawdown_pct: 0.45
+  rebalance_frequency: "monthly"
+  min_holding_days: 30
+  btc_dominance_filter: true
+
+optimization:
+  trials: 200
+  sampler: "TPE"
+  objective: "composite"
+  min_trades_per_year: 6
+
+walk_forward:
+  train_months: 24
+  test_months: 6
+  step_months: 6
+
+promotion_criteria:
+  min_sharpe_oos: 0.7
+  max_drawdown_pct: 0.45
+  min_profit_factor: 1.5
+  min_trades_per_year: 6
+  max_is_oos_divergence: 2.0
