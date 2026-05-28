@@ -299,3 +299,38 @@ class TestVWAPBreakoutStrategy:
         s = VWAPBreakoutStrategy({})
         for k, spec in s.param_space.items():
             assert spec[0] <= s.default_params()[k] <= spec[1]
+
+
+from crypto_bot.core.signals.strategies.ichimoku_cloud import IchimokuCloudStrategy
+
+
+class TestIchimokuCloudStrategy:
+    _p = {
+        "tenkan_period": 9, "kijun_period": 26,
+        "senkou_b_period": 52, "atr_period": 14,
+    }
+
+    def test_produces_long_in_uptrend(self):
+        df = make_candles(300, trend="up")
+        sigs = IchimokuCloudStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "LONG"]) > 0
+
+    def test_produces_short_in_downtrend(self):
+        df = make_candles(300, trend="down")
+        sigs = IchimokuCloudStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "SHORT"]) > 0
+
+    def test_no_signals_short_data(self):
+        df = make_candles(50, trend="up")
+        assert IchimokuCloudStrategy(self._p).generate_signals(df) == []
+
+    def test_valid_directions(self):
+        df = make_candles(300, trend="up")
+        valid = {"LONG", "SHORT", "EXIT_LONG", "EXIT_SHORT"}
+        for s in IchimokuCloudStrategy(self._p).generate_signals(df):
+            assert s.direction in valid
+
+    def test_default_params_in_space(self):
+        s = IchimokuCloudStrategy({})
+        for k, spec in s.param_space.items():
+            assert spec[0] <= s.default_params()[k] <= spec[1]
