@@ -71,12 +71,17 @@ def _run_single_strategy(
 
     # Import strategy class
     strategy_module_map = {
-        "EMARibbonStrategy":         "crypto_bot.core.signals.strategies.ema_ribbon",
-        "TTMSqueezeStrategy":        "crypto_bot.core.signals.strategies.ttm_squeeze",
-        "RSIDivergenceStrategy":     "crypto_bot.core.signals.strategies.rsi_divergence",
-        "SupertrendADXStrategy":     "crypto_bot.core.signals.strategies.supertrend_adx",
-        "BBMeanReversionStrategy":   "crypto_bot.core.signals.strategies.bb_mean_reversion",
+        "EMARibbonStrategy":            "crypto_bot.core.signals.strategies.ema_ribbon",
+        "TTMSqueezeStrategy":           "crypto_bot.core.signals.strategies.ttm_squeeze",
+        "RSIDivergenceStrategy":        "crypto_bot.core.signals.strategies.rsi_divergence",
+        "SupertrendADXStrategy":        "crypto_bot.core.signals.strategies.supertrend_adx",
+        "BBMeanReversionStrategy":      "crypto_bot.core.signals.strategies.bb_mean_reversion",
         "FundingRateReversionStrategy": "crypto_bot.core.signals.strategies.funding_rate_reversion",
+        "DonchianBreakoutStrategy":     "crypto_bot.core.signals.strategies.donchian_breakout",
+        "TSMOMStrategy":                "crypto_bot.core.signals.strategies.tsmom",
+        "HMAChandelierStrategy":        "crypto_bot.core.signals.strategies.hma_chandelier",
+        "AdaptiveTrendStrategy":        "crypto_bot.core.signals.strategies.adaptive_trend",
+        "VWAPBreakoutStrategy":         "crypto_bot.core.signals.strategies.vwap_breakout",
     }
     module = importlib.import_module(strategy_module_map[strategy_cls_name])
     strategy_cls = getattr(module, strategy_cls_name)
@@ -138,6 +143,8 @@ def run_all(
     strategy_names = [
         "EMARibbonStrategy", "TTMSqueezeStrategy", "RSIDivergenceStrategy",
         "SupertrendADXStrategy", "BBMeanReversionStrategy", "FundingRateReversionStrategy",
+        "DonchianBreakoutStrategy", "TSMOMStrategy", "HMAChandelierStrategy",
+        "AdaptiveTrendStrategy", "VWAPBreakoutStrategy",
     ]
 
     config_dict = config.model_dump()
