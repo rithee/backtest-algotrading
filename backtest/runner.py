@@ -33,6 +33,7 @@ class BacktestResult:
     fills: list[Fill] = field(default_factory=list)
     equity_curve: list[tuple[datetime, float]] = field(default_factory=list)
     initial_capital: float = 10000.0
+    mode: str = "swing"                  # "intraday" | "swing" | "spot_longterm"
 
     # Computed by BacktestRunner.compute_metrics()
     total_return_pct: float = 0.0
@@ -50,10 +51,26 @@ class BacktestResult:
 
 
 class BacktestRunner:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, mode: str = "swing") -> None:
         self.cfg = config
+        self.mode = mode
 
     def run(
+        self,
+        strategy: BaseStrategy,
+        candles_by_symbol: dict[str, pd.DataFrame],
+        aux_data: dict[str, Any] | None = None,
+        candles_by_tf: dict[str, dict[str, pd.DataFrame]] | None = None,
+    ) -> BacktestResult:
+        """Route to the correct runner based on self.mode."""
+        if self.mode == "spot_longterm":
+            return self._run_spot(strategy, candles_by_symbol, candles_by_tf or {}, aux_data)
+        elif self.mode == "intraday":
+            return self._run_intraday(strategy, candles_by_symbol, candles_by_tf or {}, aux_data)
+        else:
+            return self._run_futures(strategy, candles_by_symbol, aux_data)
+
+    def _run_futures(
         self,
         strategy: BaseStrategy,
         candles_by_symbol: dict[str, pd.DataFrame],
@@ -147,12 +164,19 @@ class BacktestRunner:
                 result.fills.append(fill)
 
         store.close()
-        self.compute_metrics(result)
+        self.compute_metrics(result, bars_per_day=6)   # 4h candles = 6/day
         return result
 
     @staticmethod
-    def compute_metrics(result: BacktestResult) -> None:
-        """Compute all performance metrics from fills and equity curve. Mutates result."""
+    def compute_metrics(result: BacktestResult, bars_per_day: int = 6) -> None:
+        """
+        Compute all performance metrics from fills and equity curve. Mutates result.
+
+        Args:
+            result:       BacktestResult to populate
+            bars_per_day: candles per trading day for annualisation
+                          1m=1440, 5m=288, 15m=96, 1h=24, 4h=6 (default), 1d=1
+        """
         import numpy as np
 
         fills = [f for f in result.fills if f.pnl is not None]
@@ -172,12 +196,12 @@ class BacktestRunner:
         daily_returns = eq_series.pct_change().dropna()
         if len(daily_returns) > 1 and daily_returns.std() > 0:
             result.sharpe_ratio = float(
-                daily_returns.mean() / daily_returns.std() * np.sqrt(252 * 6)  # 6 x 4h per day
+                daily_returns.mean() / daily_returns.std() * np.sqrt(252 * bars_per_day)
             )
             downside = daily_returns[daily_returns < 0]
             if len(downside) > 0 and downside.std() > 0:
                 result.sortino_ratio = float(
-                    daily_returns.mean() / downside.std() * np.sqrt(252 * 6)
+                    daily_returns.mean() / downside.std() * np.sqrt(252 * bars_per_day)
                 )
 
         # Max drawdown
@@ -194,8 +218,7 @@ class BacktestRunner:
             for u in underwater:
                 cur_dur = cur_dur + 1 if u else 0
                 max_dur = max(max_dur, cur_dur)
-            # Convert bars to days (4h candles: 6 bars/day)
-            result.max_drawdown_duration_days = max_dur / 6.0
+            result.max_drawdown_duration_days = max_dur / bars_per_day
 
         # Trade metrics
         pnls = [f.pnl for f in fills if f.pnl is not None]
