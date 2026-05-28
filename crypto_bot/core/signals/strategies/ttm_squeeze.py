@@ -45,18 +45,26 @@ class TTMSqueezeStrategy(BaseStrategy):
         open_pos: str | None = None
         warmup = int(p["kc_period"]) + int(p["mom_period"]) + 1
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        mom_arr        = momentum.values
+        sq_arr         = squeeze_on.values
+        atr_arr        = atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
-            mom_i   = momentum.iloc[i]
-            mom_prev = momentum.iloc[i - 1]
-            sq_i    = squeeze_on.iloc[i]
-            atr_i   = atr_v.iloc[i]
+            mom_i    = mom_arr[i]
+            mom_prev = mom_arr[i - 1]
+            sq_i     = sq_arr[i]
+            atr_i    = atr_arr[i]
             if np.isnan(mom_i) or np.isnan(mom_prev) or np.isnan(atr_i):
                 continue
 
             # Squeeze fired: was ON, now OFF
-            squeeze_fired = squeeze_on.iloc[i - 1] and not sq_i
+            squeeze_fired = bool(sq_arr[i - 1]) and not sq_i
             direction: str | None = None
             reason: list[str] = []
 
@@ -81,10 +89,10 @@ class TTMSqueezeStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=min(abs(mom_i) / (atr_i + 1e-9), 1.0),
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))

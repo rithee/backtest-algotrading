@@ -43,13 +43,21 @@ class StochRSIStrategy(BaseStrategy):
         signals: list[Signal] = []
         open_pos: str | None  = None
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        k_arr          = k_series.values
+        d_arr          = d_series.values
+        atr_arr        = atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
 
-            k_i   = k_series.iloc[i];  k_p = k_series.iloc[i - 1]
-            d_i   = d_series.iloc[i];  d_p = d_series.iloc[i - 1]
-            atr_i = atr_v.iloc[i]
+            k_i   = k_arr[i];  k_p = k_arr[i - 1]
+            d_i   = d_arr[i];  d_p = d_arr[i - 1]
+            atr_i = atr_arr[i]
 
             if any(np.isnan(v) for v in (k_i, d_i, k_p, d_p, atr_i)):
                 continue
@@ -90,10 +98,10 @@ class StochRSIStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=max(0.0, min(strength, 1.0)),
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))

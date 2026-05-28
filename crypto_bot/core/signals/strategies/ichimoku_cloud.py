@@ -52,16 +52,26 @@ class IchimokuCloudStrategy(BaseStrategy):
         prev_bullish           = False
         prev_bearish           = False
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        tenkan_arr     = tenkan.values
+        kijun_arr      = kijun.values
+        span_a_arr     = span_a.values
+        span_b_arr     = span_b.values
+        atr_arr        = atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
 
-            t_i   = tenkan.iloc[i]
-            k_i   = kijun.iloc[i]
-            sa_i  = span_a.iloc[i]
-            sb_i  = span_b.iloc[i]
-            atr_i = atr_v.iloc[i]
-            cl_i  = close.iloc[i]
+            t_i   = tenkan_arr[i]
+            k_i   = kijun_arr[i]
+            sa_i  = span_a_arr[i]
+            sb_i  = span_b_arr[i]
+            atr_i = atr_arr[i]
+            cl_i  = close_arr[i]
 
             if any(np.isnan(v) for v in (t_i, k_i, sa_i, sb_i, atr_i)):
                 continue
@@ -72,20 +82,18 @@ class IchimokuCloudStrategy(BaseStrategy):
             below_cloud  = cl_i < cloud_bottom
             inside_cloud = cloud_bottom <= cl_i <= cloud_top
 
-            tk_bull = t_i >= k_i   # tenkan at or above kijun
-            tk_bear = t_i <= k_i   # tenkan at or below kijun
+            tk_bull = t_i >= k_i
+            tk_bear = t_i <= k_i
 
-            chikou_above = cl_i > close.iloc[i - displacement]
-            chikou_below = cl_i < close.iloc[i - displacement]
+            chikou_above = cl_i > close_arr[i - displacement]
+            chikou_below = cl_i < close_arr[i - displacement]
 
-            # Full bullish/bearish state (all three Ichimoku pillars aligned)
             bullish = above_cloud and tk_bull and chikou_above
             bearish = below_cloud and tk_bear and chikou_below
 
             direction: str | None = None
             reason: list[str]     = []
 
-            # Entry on transition INTO bullish/bearish state
             if bullish and not prev_bullish and open_pos != "LONG":
                 direction = "LONG"
                 reason    = ["above_cloud", "tenkan>=kijun", "chikou_above"]
@@ -112,7 +120,7 @@ class IchimokuCloudStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=strength,
                     close_price=float(cl_i),

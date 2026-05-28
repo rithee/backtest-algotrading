@@ -60,24 +60,34 @@ class DonchianBreakoutStrategy(BaseStrategy):
         avg_atr     = atr_vals.rolling(vol_period).mean()
         avg_volume  = volume.rolling(vol_period).mean()
 
+        symbol = str(candles["symbol"].iloc[0])
         signals: list[Signal] = []
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        volume_arr     = volume.values
+        upper_arr      = upper.values
+        lower_arr      = lower.values
+        middle_arr     = middle.values
+        atr_arr        = atr_vals.values
+        avg_atr_arr    = avg_atr.values
+        avg_vol_arr    = avg_volume.values
+
         for i in range(warmup, len(candles)):
-            row      = candles.iloc[i]
-            prev_row = candles.iloc[i - 1]
-            if not row.get("is_clean", True):
+            if not is_clean_arr[i]:
                 continue
 
-            c     = float(close.iloc[i])
-            prev_c = float(close.iloc[i - 1])
-            u     = float(upper.iloc[i - 1])   # use previous bar's channel (no lookahead)
-            l     = float(lower.iloc[i - 1])
-            mid   = float(middle.iloc[i - 1])
-
-            vol      = float(volume.iloc[i])
-            avg_vol  = float(avg_volume.iloc[i])
-            cur_atr  = float(atr_vals.iloc[i])
-            mean_atr = float(avg_atr.iloc[i])
+            c      = close_arr[i]
+            prev_c = close_arr[i - 1]
+            u      = upper_arr[i - 1]   # previous bar's channel (no lookahead)
+            l      = lower_arr[i - 1]
+            mid    = middle_arr[i - 1]
+            vol    = volume_arr[i]
+            avg_vol  = avg_vol_arr[i]
+            cur_atr  = atr_arr[i]
+            mean_atr = avg_atr_arr[i]
 
             if any(np.isnan(x) for x in [u, l, mid, avg_vol, mean_atr]):
                 continue
@@ -89,12 +99,12 @@ class DonchianBreakoutStrategy(BaseStrategy):
             if prev_c <= u and c > u and volume_surge and atr_expand:
                 signals.append(Signal(
                     strategy=self.name,
-                    symbol=row["symbol"],
-                    timestamp=row["timestamp"],
+                    symbol=symbol,
+                    timestamp=timestamps_arr[i],
                     direction="LONG",
                     strength=min(1.0, (c - u) / (u * 0.005 + 1e-9)),
-                    close_price=c,
-                    atr=cur_atr,
+                    close_price=float(c),
+                    atr=float(cur_atr),
                     reason=["donchian_upper_break", "volume_surge", "atr_expansion"],
                 ))
 
@@ -102,12 +112,12 @@ class DonchianBreakoutStrategy(BaseStrategy):
             elif prev_c >= l and c < l and volume_surge and atr_expand:
                 signals.append(Signal(
                     strategy=self.name,
-                    symbol=row["symbol"],
-                    timestamp=row["timestamp"],
+                    symbol=symbol,
+                    timestamp=timestamps_arr[i],
                     direction="SHORT",
                     strength=min(1.0, (l - c) / (l * 0.005 + 1e-9)),
-                    close_price=c,
-                    atr=cur_atr,
+                    close_price=float(c),
+                    atr=float(cur_atr),
                     reason=["donchian_lower_break", "volume_surge", "atr_expansion"],
                 ))
 
@@ -115,12 +125,12 @@ class DonchianBreakoutStrategy(BaseStrategy):
             elif c < mid and prev_c >= mid:
                 signals.append(Signal(
                     strategy=self.name,
-                    symbol=row["symbol"],
-                    timestamp=row["timestamp"],
+                    symbol=symbol,
+                    timestamp=timestamps_arr[i],
                     direction="EXIT_LONG",
                     strength=1.0,
-                    close_price=c,
-                    atr=cur_atr,
+                    close_price=float(c),
+                    atr=float(cur_atr),
                     reason=["price_below_midline"],
                 ))
 
@@ -128,12 +138,12 @@ class DonchianBreakoutStrategy(BaseStrategy):
             elif c > mid and prev_c <= mid:
                 signals.append(Signal(
                     strategy=self.name,
-                    symbol=row["symbol"],
-                    timestamp=row["timestamp"],
+                    symbol=symbol,
+                    timestamp=timestamps_arr[i],
                     direction="EXIT_SHORT",
                     strength=1.0,
-                    close_price=c,
-                    atr=cur_atr,
+                    close_price=float(c),
+                    atr=float(cur_atr),
                     reason=["price_above_midline"],
                 ))
 

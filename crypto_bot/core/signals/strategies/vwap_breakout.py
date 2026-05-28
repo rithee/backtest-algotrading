@@ -68,24 +68,37 @@ class VWAPBreakoutStrategy(BaseStrategy):
         avg_vol = volume.rolling(vol_period).mean()
         atr_v   = atr(high, low, close, atr_period)
 
+        symbol = str(candles["symbol"].iloc[0])
         signals: list[Signal] = []
         in_long  = False
         in_short = False
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        vwap_arr       = vwap_.values
+        upper_arr      = upper.values
+        lower_arr      = lower.values
+        volume_arr     = volume.values
+        avg_vol_arr    = avg_vol.values
+        atr_arr        = atr_v.values
+        vwap_std_arr   = vwap_std.values
+
         for i in range(warmup, len(candles)):
-            row  = candles.iloc[i]
-            if not row.get("is_clean", True):
+            if not is_clean_arr[i]:
                 continue
 
-            c    = float(close.iloc[i])
-            pc   = float(close.iloc[i - 1])
-            vw   = float(vwap_.iloc[i])
-            up   = float(upper.iloc[i])
-            lo   = float(lower.iloc[i])
-            pvw  = float(vwap_.iloc[i - 1])
-            vol  = float(volume.iloc[i])
-            avol = float(avg_vol.iloc[i])
-            cur_atr = float(atr_v.iloc[i])
+            c       = close_arr[i]
+            pc      = close_arr[i - 1]
+            vw      = vwap_arr[i]
+            up      = upper_arr[i]
+            lo      = lower_arr[i]
+            pvw     = vwap_arr[i - 1]
+            vol     = volume_arr[i]
+            avol    = avg_vol_arr[i]
+            cur_atr = atr_arr[i]
+            ts      = timestamps_arr[i]
 
             if any(np.isnan(x) for x in [vw, up, lo, avol]):
                 continue
@@ -95,56 +108,56 @@ class VWAPBreakoutStrategy(BaseStrategy):
             # Exit: price crosses back through VWAP midline
             if in_long and c < vw and pc >= pvw:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_LONG",
-                    strength=1.0, close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="EXIT_LONG",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr),
                     reason=["price_below_vwap"],
                 ))
                 in_long = False
 
             elif in_short and c > vw and pc <= pvw:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_SHORT",
-                    strength=1.0, close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="EXIT_SHORT",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr),
                     reason=["price_above_vwap"],
                 ))
                 in_short = False
 
             # Entry: breakout above upper band
-            if not in_long and c > up and pc <= float(upper.iloc[i - 1]) and vol_ok:
+            if not in_long and c > up and pc <= upper_arr[i - 1] and vol_ok:
                 if in_short:
                     signals.append(Signal(
-                        strategy=self.name, symbol=row["symbol"],
-                        timestamp=row["timestamp"], direction="EXIT_SHORT",
-                        strength=1.0, close_price=c, atr=cur_atr,
+                        strategy=self.name, symbol=symbol,
+                        timestamp=ts, direction="EXIT_SHORT",
+                        strength=1.0, close_price=float(c), atr=float(cur_atr),
                         reason=["vwap_band_flip"],
                     ))
                     in_short = False
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="LONG",
-                    strength=min(1.0, (c - up) / (vwap_std.iloc[i] + 1e-9)),
-                    close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="LONG",
+                    strength=min(1.0, (c - up) / (vwap_std_arr[i] + 1e-9)),
+                    close_price=float(c), atr=float(cur_atr),
                     reason=["vwap_upper_break", "vol_confirm"],
                 ))
                 in_long = True
 
             # Entry: breakout below lower band
-            elif not in_short and c < lo and pc >= float(lower.iloc[i - 1]) and vol_ok:
+            elif not in_short and c < lo and pc >= lower_arr[i - 1] and vol_ok:
                 if in_long:
                     signals.append(Signal(
-                        strategy=self.name, symbol=row["symbol"],
-                        timestamp=row["timestamp"], direction="EXIT_LONG",
-                        strength=1.0, close_price=c, atr=cur_atr,
+                        strategy=self.name, symbol=symbol,
+                        timestamp=ts, direction="EXIT_LONG",
+                        strength=1.0, close_price=float(c), atr=float(cur_atr),
                         reason=["vwap_band_flip"],
                     ))
                     in_long = False
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="SHORT",
-                    strength=min(1.0, (lo - c) / (vwap_std.iloc[i] + 1e-9)),
-                    close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="SHORT",
+                    strength=min(1.0, (lo - c) / (vwap_std_arr[i] + 1e-9)),
+                    close_price=float(c), atr=float(cur_atr),
                     reason=["vwap_lower_break", "vol_confirm"],
                 ))
                 in_short = True

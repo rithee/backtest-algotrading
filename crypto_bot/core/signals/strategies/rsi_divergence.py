@@ -45,32 +45,44 @@ class RSIDivergenceStrategy(BaseStrategy):
         open_pos: str | None = None
         warmup = int(p["macd_slow"]) + int(p["macd_signal"]) + lb + 1
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        high_arr       = high.values
+        low_arr        = low.values
+        rsi_arr        = rsi_v.values
+        hist_arr       = macd_hist.values
+        atr_arr        = atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
-            rsi_i = rsi_v.iloc[i]
-            atr_i = atr_v.iloc[i]
-            hist_i = macd_hist.iloc[i]
+            rsi_i  = rsi_arr[i]
+            atr_i  = atr_arr[i]
+            hist_i = hist_arr[i]
             if np.isnan(rsi_i) or np.isnan(atr_i) or np.isnan(hist_i):
                 continue
 
-            # Lookback window
-            low_window   = low.iloc[i - lb:i]
-            high_window  = high.iloc[i - lb:i]
-            rsi_window   = rsi_v.iloc[i - lb:i]
-            if rsi_window.isna().any():
+            # Lookback window (numpy slices — fast)
+            low_window  = low_arr[i - lb:i]
+            high_window = high_arr[i - lb:i]
+            rsi_window  = rsi_arr[i - lb:i]
+            if np.isnan(rsi_window).any():
                 continue
+
+            lo_i = low_arr[i]; hi_i = high_arr[i]
 
             # Hidden bullish: price makes higher low, RSI makes lower low
             hidden_bull = (
-                float(low.iloc[i]) > float(low_window.min())
-                and rsi_i < float(rsi_window.min())
-                and hist_i > 0  # MACD confirms upward momentum
+                lo_i > low_window.min()
+                and rsi_i < rsi_window.min()
+                and hist_i > 0
             )
             # Hidden bearish: price makes lower high, RSI makes higher high
             hidden_bear = (
-                float(high.iloc[i]) < float(high_window.max())
-                and rsi_i > float(rsi_window.max())
+                hi_i < high_window.max()
+                and rsi_i > rsi_window.max()
                 and hist_i < 0
             )
 
@@ -80,11 +92,7 @@ class RSIDivergenceStrategy(BaseStrategy):
 
             if hidden_bull and open_pos != "LONG":
                 direction = "LONG"
-                confirming = sum([
-                    float(low.iloc[i]) > float(low_window.min()),
-                    rsi_i < float(rsi_window.min()),
-                    hist_i > 0,
-                ])
+                confirming = sum([lo_i > low_window.min(), rsi_i < rsi_window.min(), hist_i > 0])
                 reason = ["hidden_bull_div", f"RSI={rsi_i:.1f}", "MACD_pos"]
                 open_pos = "LONG"
             elif hidden_bear and open_pos != "SHORT":
@@ -105,10 +113,10 @@ class RSIDivergenceStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=confirming / 3.0 if confirming else 0.5,
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))

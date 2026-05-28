@@ -43,12 +43,20 @@ class EMARibbonStrategy(BaseStrategy):
         adx_thresh = float(p["adx_threshold"])
         warmup = int(p["ema_trend"]) + 1
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        ema_f_arr, ema_m_arr = ema_f.values, ema_m.values
+        ema_s_arr, ema_t_arr = ema_s.values, ema_t.values
+        adx_arr, atr_arr     = adx_v.values, atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
-            ef = ema_f.iloc[i]; em = ema_m.iloc[i]
-            es = ema_s.iloc[i]; et = ema_t.iloc[i]
-            adx_i = adx_v.iloc[i]; atr_i = atr_v.iloc[i]
+            ef = ema_f_arr[i]; em = ema_m_arr[i]
+            es = ema_s_arr[i]; et = ema_t_arr[i]
+            adx_i = adx_arr[i]; atr_i = atr_arr[i]
             if np.isnan(ef) or np.isnan(et) or np.isnan(adx_i) or np.isnan(atr_i):
                 continue
 
@@ -80,10 +88,10 @@ class EMARibbonStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=min(adx_i / 50.0, 1.0),
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))

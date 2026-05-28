@@ -43,29 +43,33 @@ class MACDHistDivergenceStrategy(BaseStrategy):
         signals: list[Signal] = []
         open_pos: str | None  = None
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        hist_arr       = hist.values
+        atr_arr        = atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
 
-            hist_i = hist.iloc[i]
-            hist_p = hist.iloc[i - 1]
-            atr_i  = atr_v.iloc[i]
-            cl_i   = close.iloc[i]
-            hist_lb = hist.iloc[i - lb]
-            cl_lb   = close.iloc[i - lb]
+            hist_i  = hist_arr[i]
+            hist_p  = hist_arr[i - 1]
+            atr_i   = atr_arr[i]
+            cl_i    = close_arr[i]
+            hist_lb = hist_arr[i - lb]
+            cl_lb   = close_arr[i - lb]
 
             if any(np.isnan(v) for v in (hist_i, hist_p, atr_i, hist_lb)):
                 continue
 
-            # Bullish: price lower low + histogram higher low + hist turning up from negative
             bullish_div = (
                 cl_i   < cl_lb    and
                 hist_i > hist_lb  and
                 hist_i < 0        and
                 hist_i > hist_p
             )
-
-            # Bearish: price higher high + histogram lower high + hist turning down from positive
             bearish_div = (
                 cl_i   > cl_lb    and
                 hist_i < hist_lb  and
@@ -98,7 +102,7 @@ class MACDHistDivergenceStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=min(strength, 1.0),
                     close_price=float(cl_i),

@@ -41,13 +41,21 @@ class SupertrendADXStrategy(BaseStrategy):
         adx_thresh = float(p["adx_threshold"])
         warmup = 1  # start from i=1; NaN guard handles uninitialized values
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        st_dir_arr     = st_dir.values
+        adx_arr        = adx_v.values
+        atr_arr        = atr_v.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
-            dir_i  = int(st_dir.iloc[i])
-            dir_prev = int(st_dir.iloc[i - 1])
-            adx_i  = adx_v.iloc[i]
-            atr_i  = atr_v.iloc[i]
+            dir_i    = int(st_dir_arr[i])
+            dir_prev = int(st_dir_arr[i - 1])
+            adx_i    = adx_arr[i]
+            atr_i    = atr_arr[i]
             if np.isnan(adx_i) or np.isnan(atr_i) or dir_i == 0:
                 continue
 
@@ -78,10 +86,10 @@ class SupertrendADXStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=min(adx_i / 50.0, 1.0),
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))

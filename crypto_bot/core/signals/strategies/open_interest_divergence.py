@@ -51,17 +51,24 @@ class OpenInterestDivergenceStrategy(BaseStrategy):
         signals: list[Signal] = []
         open_pos: str | None  = None
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        rsi_arr        = rsi_v.values
+        atr_arr        = atr_v.values
+        oi_arr         = oi_aligned.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
 
-            rsi_i = rsi_v.iloc[i]
-            atr_i = atr_v.iloc[i]
-            cl_i  = close.iloc[i]
-            cl_lb = close.iloc[i - oi_period]
-
-            oi_curr = oi_aligned.iloc[i]
-            oi_prev = oi_aligned.iloc[i - oi_period]
+            rsi_i   = rsi_arr[i]
+            atr_i   = atr_arr[i]
+            cl_i    = close_arr[i]
+            cl_lb   = close_arr[i - oi_period]
+            oi_curr = oi_arr[i]
+            oi_prev = oi_arr[i - oi_period]
 
             if any(np.isnan(v) for v in (rsi_i, atr_i, oi_curr, oi_prev)):
                 continue
@@ -71,8 +78,8 @@ class OpenInterestDivergenceStrategy(BaseStrategy):
             oi_change    = (oi_curr - oi_prev) / oi_prev
             price_change = (cl_i - cl_lb) / max(cl_lb, 1e-9)
 
-            oi_rising    = oi_change >  surge_pct
-            oi_unwinding = oi_change < -surge_pct
+            oi_rising     = oi_change >  surge_pct
+            oi_unwinding  = oi_change < -surge_pct
             price_falling = price_change < -0.001
             price_rising  = price_change >  0.001
 
@@ -100,7 +107,7 @@ class OpenInterestDivergenceStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=min(abs(oi_change) / max(surge_pct * 3, 1e-9), 1.0),
                     close_price=float(cl_i),

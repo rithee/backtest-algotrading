@@ -74,11 +74,17 @@ class BacktestRunner:
             for sig in sigs:
                 signal_map[(symbol, sig.timestamp)] = sig
 
-        # Build sorted timeline of (timestamp, symbol, candle_row)
-        timeline: list[tuple[datetime, str, pd.Series]] = []
+        # Build sorted timeline as flat tuples — avoids iterrows() pd.Series overhead
+        # Each entry: (timestamp, symbol, open, high, low, close)
+        timeline: list[tuple] = []
         for symbol, df in candles_by_symbol.items():
-            for _, row in df.iterrows():
-                timeline.append((row["timestamp"], symbol, row))
+            ts_list = df["timestamp"].tolist()
+            op_list = df["open"].tolist()
+            hi_list = df["high"].tolist()
+            lo_list = df["low"].tolist()
+            cl_list = df["close"].tolist()
+            for j in range(len(ts_list)):
+                timeline.append((ts_list[j], symbol, op_list[j], hi_list[j], lo_list[j], cl_list[j]))
         timeline.sort(key=lambda x: x[0])
 
         # Group by timestamp to process all symbols at same time together
@@ -89,16 +95,16 @@ class BacktestRunner:
             group_items = list(group)
             ts_fills: list[Fill] = []
 
-            for _, symbol, row in group_items:
-                risk.record_price(symbol, float(row["close"]))
+            for _, symbol, op, hi, lo, cl in group_items:
+                risk.record_price(symbol, cl)
 
                 new_fills = exec_engine.process_candle(
                     symbol=symbol,
                     timestamp=ts,
-                    open_=float(row["open"]),
-                    high=float(row["high"]),
-                    low=float(row["low"]),
-                    close=float(row["close"]),
+                    open_=op,
+                    high=hi,
+                    low=lo,
+                    close=cl,
                 )
                 ts_fills.extend(new_fills)
 

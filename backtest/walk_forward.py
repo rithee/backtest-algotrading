@@ -49,19 +49,12 @@ def run_walk_forward(
     runner = BacktestRunner(config)
     windows: list[WalkForwardWindow] = []
 
-    # Get full date range from candles
-    all_dates = sorted(
-        set(
-            pd.Timestamp(row["timestamp"])
-            for df in candles_by_symbol.values()
-            for _, row in df.iterrows()
-        )
-    )
-    if not all_dates:
+    # Get full date range from candles — use vectorised min/max, never iterrows
+    if not candles_by_symbol:
         return WalkForwardResult(strategy_name=strategy_cls.__name__, windows=[])
-
-    start = all_dates[0].to_pydatetime()
-    end   = all_dates[-1].to_pydatetime()
+    all_ts = pd.concat([df["timestamp"] for df in candles_by_symbol.values()])
+    start  = pd.Timestamp(all_ts.min()).to_pydatetime()
+    end    = pd.Timestamp(all_ts.max()).to_pydatetime()
 
     from dateutil.relativedelta import relativedelta
     train_start = start

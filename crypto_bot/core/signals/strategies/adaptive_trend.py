@@ -80,22 +80,32 @@ class AdaptiveTrendStrategy(BaseStrategy):
         score_s = np.sign(close - ema_s)
         consensus = score_f + score_m + score_s   # range: -3 to +3
 
+        symbol = str(candles["symbol"].iloc[0])
         signals: list[Signal] = []
         prev_consensus = 0.0
         in_long  = False
         in_short = False
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr      = candles["is_clean"].values
+        timestamps_arr    = candles["timestamp"].dt.to_pydatetime()
+        close_arr         = close.values
+        consensus_arr     = consensus.values
+        atr_arr           = atr_v.values
+        intrabar_vol_arr  = intrabar_vol.values
+        vol_thresh_arr    = vol_thresh.values
+
         for i in range(warmup, len(candles)):
-            row = candles.iloc[i]
-            if not row.get("is_clean", True):
+            if not is_clean_arr[i]:
                 continue
 
-            c    = float(close.iloc[i])
-            cons = float(consensus.iloc[i])
-            prev = float(consensus.iloc[i - 1])
-            cur_atr = float(atr_v.iloc[i])
-            iv   = float(intrabar_vol.iloc[i])
-            vt   = float(vol_thresh.iloc[i])
+            c       = close_arr[i]
+            cons    = consensus_arr[i]
+            prev    = consensus_arr[i - 1]
+            cur_atr = atr_arr[i]
+            iv      = intrabar_vol_arr[i]
+            vt      = vol_thresh_arr[i]
+            ts      = timestamps_arr[i]
 
             if any(np.isnan(x) for x in [cons, cur_atr, vt]):
                 continue
@@ -106,18 +116,18 @@ class AdaptiveTrendStrategy(BaseStrategy):
             # Exit conditions: consensus flips or drops to neutral
             if in_long and cons <= 0:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_LONG",
-                    strength=1.0, close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="EXIT_LONG",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr),
                     reason=["consensus_lost"],
                 ))
                 in_long = False
 
             elif in_short and cons >= 0:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_SHORT",
-                    strength=1.0, close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="EXIT_SHORT",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr),
                     reason=["consensus_lost"],
                 ))
                 in_short = False
@@ -127,17 +137,17 @@ class AdaptiveTrendStrategy(BaseStrategy):
                 if cons >= 2 and prev < 2 and not in_long:
                     if in_short:
                         signals.append(Signal(
-                            strategy=self.name, symbol=row["symbol"],
-                            timestamp=row["timestamp"], direction="EXIT_SHORT",
-                            strength=1.0, close_price=c, atr=cur_atr,
+                            strategy=self.name, symbol=symbol,
+                            timestamp=ts, direction="EXIT_SHORT",
+                            strength=1.0, close_price=float(c), atr=float(cur_atr),
                             reason=["consensus_flip"],
                         ))
                         in_short = False
                     signals.append(Signal(
-                        strategy=self.name, symbol=row["symbol"],
-                        timestamp=row["timestamp"], direction="LONG",
+                        strategy=self.name, symbol=symbol,
+                        timestamp=ts, direction="LONG",
                         strength=min(1.0, cons / 3.0),
-                        close_price=c, atr=cur_atr,
+                        close_price=float(c), atr=float(cur_atr),
                         reason=["ema_consensus_long", f"score_{int(cons)}_of_3"],
                     ))
                     in_long = True
@@ -145,17 +155,17 @@ class AdaptiveTrendStrategy(BaseStrategy):
                 elif cons <= -2 and prev > -2 and not in_short:
                     if in_long:
                         signals.append(Signal(
-                            strategy=self.name, symbol=row["symbol"],
-                            timestamp=row["timestamp"], direction="EXIT_LONG",
-                            strength=1.0, close_price=c, atr=cur_atr,
+                            strategy=self.name, symbol=symbol,
+                            timestamp=ts, direction="EXIT_LONG",
+                            strength=1.0, close_price=float(c), atr=float(cur_atr),
                             reason=["consensus_flip"],
                         ))
                         in_long = False
                     signals.append(Signal(
-                        strategy=self.name, symbol=row["symbol"],
-                        timestamp=row["timestamp"], direction="SHORT",
+                        strategy=self.name, symbol=symbol,
+                        timestamp=ts, direction="SHORT",
                         strength=min(1.0, abs(cons) / 3.0),
-                        close_price=c, atr=cur_atr,
+                        close_price=float(c), atr=float(cur_atr),
                         reason=["ema_consensus_short", f"score_{int(cons)}_of_3"],
                     ))
                     in_short = True

@@ -59,19 +59,29 @@ class TSMOMStrategy(BaseStrategy):
         avg_vol      = realized_vol.rolling(vol_period).mean()
         trend_sma    = close.rolling(trend_period).mean()
 
+        symbol = str(candles["symbol"].iloc[0])
         signals: list[Signal] = []
         prev_signal = 0.0
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        sig_arr        = signal_raw.values
+        rvol_arr       = realized_vol.values
+        avgvol_arr     = avg_vol.values
+        sma_arr        = trend_sma.values
+        cumret_arr     = cum_ret.values
+
         for i in range(warmup, len(candles)):
-            row = candles.iloc[i]
-            if not row.get("is_clean", True):
+            if not is_clean_arr[i]:
                 continue
 
-            c        = float(close.iloc[i])
-            sig      = float(signal_raw.iloc[i])
-            rvol     = float(realized_vol.iloc[i])
-            avgvol   = float(avg_vol.iloc[i])
-            sma      = float(trend_sma.iloc[i])
+            c       = close_arr[i]
+            sig     = sig_arr[i]
+            rvol    = rvol_arr[i]
+            avgvol  = avgvol_arr[i]
+            sma     = sma_arr[i]
             cur_atr_est = rvol / np.sqrt(252 * 6) * c  # rough ATR from vol
 
             if any(np.isnan(x) for x in [sig, rvol, avgvol, sma]):
@@ -83,9 +93,9 @@ class TSMOMStrategy(BaseStrategy):
             if vol_spiking and prev_signal != 0:
                 direction = "EXIT_LONG" if prev_signal > 0 else "EXIT_SHORT"
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction=direction,
-                    strength=1.0, close_price=c, atr=cur_atr_est,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=timestamps_arr[i], direction=direction,
+                    strength=1.0, close_price=float(c), atr=float(cur_atr_est),
                     reason=["vol_spike_exit"],
                 ))
                 prev_signal = 0.0
@@ -98,10 +108,10 @@ class TSMOMStrategy(BaseStrategy):
             # Signal flipped to bullish
             if sig > 0 and prev_signal <= 0 and regime_allows_long:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="LONG",
-                    strength=min(1.0, abs(float(cum_ret.iloc[i]))),
-                    close_price=c, atr=cur_atr_est,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=timestamps_arr[i], direction="LONG",
+                    strength=min(1.0, abs(float(cumret_arr[i]))),
+                    close_price=float(c), atr=float(cur_atr_est),
                     reason=["tsmom_long", f"ret_{mom_period}bar_positive"],
                 ))
                 prev_signal = 1.0
@@ -109,10 +119,10 @@ class TSMOMStrategy(BaseStrategy):
             # Signal flipped to bearish
             elif sig < 0 and prev_signal >= 0 and regime_allows_short:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="SHORT",
-                    strength=min(1.0, abs(float(cum_ret.iloc[i]))),
-                    close_price=c, atr=cur_atr_est,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=timestamps_arr[i], direction="SHORT",
+                    strength=min(1.0, abs(float(cumret_arr[i]))),
+                    close_price=float(c), atr=float(cur_atr_est),
                     reason=["tsmom_short", f"ret_{mom_period}bar_negative"],
                 ))
                 prev_signal = -1.0
@@ -120,18 +130,18 @@ class TSMOMStrategy(BaseStrategy):
             # Exit: signal flipped against position
             elif prev_signal > 0 and sig <= 0:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_LONG",
-                    strength=1.0, close_price=c, atr=cur_atr_est,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=timestamps_arr[i], direction="EXIT_LONG",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr_est),
                     reason=["momentum_reversal"],
                 ))
                 prev_signal = 0.0
 
             elif prev_signal < 0 and sig >= 0:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_SHORT",
-                    strength=1.0, close_price=c, atr=cur_atr_est,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=timestamps_arr[i], direction="EXIT_SHORT",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr_est),
                     reason=["momentum_reversal"],
                 ))
                 prev_signal = 0.0

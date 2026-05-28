@@ -69,28 +69,42 @@ class HMAChandelierStrategy(BaseStrategy):
         chan_long, chan_short = chandelier_exit(high, low, close, cp, cm)
         atr_vals = atr(high, low, close, cp)
 
+        symbol = str(candles["symbol"].iloc[0])
         signals: list[Signal] = []
         in_long  = False
         in_short = False
         chan_long_level  = np.nan
         chan_short_level = np.nan
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        hma_f_arr      = hma_f.values
+        hma_s_arr      = hma_s.values
+        hma_t_arr      = hma_t.values
+        volume_arr     = volume.values
+        avg_vol_arr    = avg_vol.values
+        chan_long_arr  = chan_long.values
+        chan_short_arr = chan_short.values
+        atr_arr        = atr_vals.values
+
         for i in range(warmup, len(candles)):
-            row = candles.iloc[i]
-            if not row.get("is_clean", True):
+            if not is_clean_arr[i]:
                 continue
 
-            c    = float(close.iloc[i])
-            hf   = float(hma_f.iloc[i])
-            hs   = float(hma_s.iloc[i])
-            ht   = float(hma_t.iloc[i])
-            hf_p = float(hma_f.iloc[i - 1])
-            hs_p = float(hma_s.iloc[i - 1])
-            vol  = float(volume.iloc[i])
-            avol = float(avg_vol.iloc[i])
-            cl   = float(chan_long.iloc[i])
-            cs   = float(chan_short.iloc[i])
-            cur_atr = float(atr_vals.iloc[i])
+            c       = close_arr[i]
+            hf      = hma_f_arr[i]
+            hs      = hma_s_arr[i]
+            ht      = hma_t_arr[i]
+            hf_p    = hma_f_arr[i - 1]
+            hs_p    = hma_s_arr[i - 1]
+            vol     = volume_arr[i]
+            avol    = avg_vol_arr[i]
+            cl      = chan_long_arr[i]
+            cs      = chan_short_arr[i]
+            cur_atr = atr_arr[i]
+            ts      = timestamps_arr[i]
 
             if any(np.isnan(x) for x in [hf, hs, ht, avol, cl, cs]):
                 continue
@@ -106,9 +120,9 @@ class HMAChandelierStrategy(BaseStrategy):
             # Chandelier stop hit
             if in_long and c < chan_long_level:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_LONG",
-                    strength=1.0, close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="EXIT_LONG",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr),
                     reason=["chandelier_stop"],
                 ))
                 in_long = False
@@ -116,9 +130,9 @@ class HMAChandelierStrategy(BaseStrategy):
 
             elif in_short and c > chan_short_level:
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="EXIT_SHORT",
-                    strength=1.0, close_price=c, atr=cur_atr,
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="EXIT_SHORT",
+                    strength=1.0, close_price=float(c), atr=float(cur_atr),
                     reason=["chandelier_stop"],
                 ))
                 in_short = False
@@ -132,17 +146,17 @@ class HMAChandelierStrategy(BaseStrategy):
             if cross_up and c > ht and vol_ok and not in_long:
                 if in_short:
                     signals.append(Signal(
-                        strategy=self.name, symbol=row["symbol"],
-                        timestamp=row["timestamp"], direction="EXIT_SHORT",
-                        strength=1.0, close_price=c, atr=cur_atr,
+                        strategy=self.name, symbol=symbol,
+                        timestamp=ts, direction="EXIT_SHORT",
+                        strength=1.0, close_price=float(c), atr=float(cur_atr),
                         reason=["hma_cross_exit"],
                     ))
                     in_short = False
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="LONG",
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="LONG",
                     strength=min(1.0, abs(hf - hs) / (c * 0.005 + 1e-9)),
-                    close_price=c, atr=cur_atr,
+                    close_price=float(c), atr=float(cur_atr),
                     reason=["hma_cross_up", "above_trend_hma", "vol_confirm"],
                 ))
                 in_long = True
@@ -152,17 +166,17 @@ class HMAChandelierStrategy(BaseStrategy):
             elif cross_down and c < ht and vol_ok and not in_short:
                 if in_long:
                     signals.append(Signal(
-                        strategy=self.name, symbol=row["symbol"],
-                        timestamp=row["timestamp"], direction="EXIT_LONG",
-                        strength=1.0, close_price=c, atr=cur_atr,
+                        strategy=self.name, symbol=symbol,
+                        timestamp=ts, direction="EXIT_LONG",
+                        strength=1.0, close_price=float(c), atr=float(cur_atr),
                         reason=["hma_cross_exit"],
                     ))
                     in_long = False
                 signals.append(Signal(
-                    strategy=self.name, symbol=row["symbol"],
-                    timestamp=row["timestamp"], direction="SHORT",
+                    strategy=self.name, symbol=symbol,
+                    timestamp=ts, direction="SHORT",
                     strength=min(1.0, abs(hf - hs) / (c * 0.005 + 1e-9)),
-                    close_price=c, atr=cur_atr,
+                    close_price=float(c), atr=float(cur_atr),
                     reason=["hma_cross_down", "below_trend_hma", "vol_confirm"],
                 ))
                 in_short = True

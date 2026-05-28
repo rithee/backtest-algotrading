@@ -44,12 +44,20 @@ class FundingRateReversionStrategy(BaseStrategy):
         threshold = float(p["funding_threshold"])
         exit_pct   = float(p["exit_funding_pct"])
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        rsi_arr        = rsi_v.values
+        atr_arr        = atr_v.values
+        funding_arr    = funding_series.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
-            rsi_i    = rsi_v.iloc[i]
-            atr_i    = atr_v.iloc[i]
-            funding  = float(funding_series.iloc[i])
+            rsi_i   = rsi_arr[i]
+            atr_i   = atr_arr[i]
+            funding = float(funding_arr[i])
             if np.isnan(rsi_i) or np.isnan(atr_i):
                 continue
 
@@ -80,10 +88,10 @@ class FundingRateReversionStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=confirming / 2.0 if confirming else 0.5,
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))

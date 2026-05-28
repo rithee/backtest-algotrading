@@ -41,17 +41,28 @@ class BBMeanReversionStrategy(BaseStrategy):
         open_pos: str | None = None
         warmup = int(p["bb_period"]) + 1
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        rsi_arr        = rsi_v.values
+        bbw_arr        = bbw.values
+        atr_arr        = atr_v.values
+        upper_arr      = bb_upper.values
+        lower_arr      = bb_lower.values
+        mid_arr        = bb_mid.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
-            c     = float(close.iloc[i])
-            c_prev = float(close.iloc[i - 1])
-            rsi_i  = rsi_v.iloc[i]
-            bbw_i  = bbw.iloc[i]
-            atr_i  = atr_v.iloc[i]
-            ub     = float(bb_upper.iloc[i])
-            lb     = float(bb_lower.iloc[i])
-            mid    = float(bb_mid.iloc[i])
+            c      = close_arr[i]
+            c_prev = close_arr[i - 1]
+            rsi_i  = rsi_arr[i]
+            bbw_i  = bbw_arr[i]
+            atr_i  = atr_arr[i]
+            ub     = upper_arr[i]
+            lb     = lower_arr[i]
+            mid    = mid_arr[i]
 
             if np.isnan(rsi_i) or np.isnan(bbw_i) or np.isnan(atr_i):
                 continue
@@ -85,10 +96,10 @@ class BBMeanReversionStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=confirming / 3.0 if confirming else 0.5,
-                    close_price=c,
+                    close_price=float(c),
                     atr=float(atr_i),
                     reason=reason,
                 ))

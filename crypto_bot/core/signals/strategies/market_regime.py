@@ -52,19 +52,27 @@ class MarketRegimeStrategy(BaseStrategy):
         open_pos: str | None  = None
         prev_regime: str      = "UNKNOWN"
 
+        # pre-convert to numpy — eliminates pandas .iloc overhead in hot loop
+        is_clean_arr   = candles["is_clean"].values
+        timestamps_arr = candles["timestamp"].dt.to_pydatetime()
+        close_arr      = close.values
+        adx_arr        = adx_v.values
+        slope_arr      = slope_v.values
+        atr_arr        = atr_v.values
+        atr_mean_arr   = atr_mean.values
+
         for i in range(warmup, len(candles)):
-            if not candles["is_clean"].iloc[i]:
+            if not is_clean_arr[i]:
                 continue
 
-            adx_i   = adx_v.iloc[i]
-            slope_i = slope_v.iloc[i]
-            atr_i   = atr_v.iloc[i]
-            atr_m   = atr_mean.iloc[i]
+            adx_i   = adx_arr[i]
+            slope_i = slope_arr[i]
+            atr_i   = atr_arr[i]
+            atr_m   = atr_mean_arr[i]
 
             if any(np.isnan(v) for v in (adx_i, slope_i, atr_i, atr_m)):
                 continue
 
-            # Determine regime
             if atr_i > vol_thresh * atr_m:
                 regime = "VOLATILE"
             elif adx_i > trend_thresh:
@@ -72,7 +80,7 @@ class MarketRegimeStrategy(BaseStrategy):
             elif adx_i < range_thresh:
                 regime = "RANGING"
             else:
-                regime = "TRANSITION"  # between thresholds — no signal
+                regime = "TRANSITION"
 
             direction: str | None = None
             reason: list[str]     = []
@@ -102,10 +110,10 @@ class MarketRegimeStrategy(BaseStrategy):
                 signals.append(Signal(
                     strategy=self.name,
                     symbol=symbol,
-                    timestamp=candles["timestamp"].iloc[i],
+                    timestamp=timestamps_arr[i],
                     direction=direction,
                     strength=min(adx_i / 50.0, 1.0),
-                    close_price=float(close.iloc[i]),
+                    close_price=float(close_arr[i]),
                     atr=float(atr_i),
                     reason=reason,
                 ))
