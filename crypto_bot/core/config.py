@@ -13,12 +13,26 @@ class ExchangeConfig(BaseModel):
 
 class BacktestConfig(BaseModel):
     symbols: list[str] = ["BTCUSDT", "ETHUSDT"]
-    timeframe: str = "4h"
+    timeframe: str = "4h"                        # kept for backward compat
+    timeframes: list[str] = []                   # if non-empty, overrides timeframe
+    primary_tf: str = ""                         # signal generation TF; defaults to timeframe
+    confirm_tf: str = ""                         # direction filter TF
+    trend_tf: str = ""                           # bias filter TF
     start_date: str = "2020-01-01"
     end_date: str = "2024-12-31"
     initial_capital_per_strategy: float = 10000.0
     fees_pct: float = 0.001
     slippage_pct: float = 0.0005
+
+    @property
+    def active_timeframes(self) -> list[str]:
+        """Returns the effective list of timeframes to load."""
+        return self.timeframes if self.timeframes else [self.timeframe]
+
+    @property
+    def active_primary_tf(self) -> str:
+        """Returns the effective primary timeframe."""
+        return self.primary_tf if self.primary_tf else self.timeframe
 
 
 class LeverageConfig(BaseModel):
@@ -34,6 +48,17 @@ class RiskConfig(BaseModel):
     max_correlated_positions: int = 2
     correlation_lookback_days: int = 30
     correlation_threshold: float = 0.75
+    # intraday-specific
+    max_daily_loss_pct: float = 0.0      # 0 = disabled; 0.03 = stop after 3% daily loss
+    max_trades_per_day: int = 0          # 0 = disabled
+    session_filter: bool = False         # only trade during active crypto sessions
+    # swing new
+    options_expiry_aware: bool = False
+    weekly_max_pain_target: bool = False
+    # spot long-term
+    rebalance_frequency: str = ""        # "monthly" | "" = disabled
+    min_holding_days: int = 0            # 0 = disabled
+    btc_dominance_filter: bool = False
 
 
 class OptimizationConfig(BaseModel):
@@ -66,6 +91,14 @@ class Config(BaseModel):
     optimization: OptimizationConfig = OptimizationConfig()
     walk_forward: WalkForwardConfig = WalkForwardConfig()
     promotion_criteria: PromotionCriteria = PromotionCriteria()
+    mode: str = "swing"                  # "intraday" | "swing" | "spot_longterm"
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "Config":
+        """Load config from a YAML file path."""
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        return cls.model_validate(data or {})
 
 
 def load_config(path: str | Path = "config/settings.yaml") -> Config:
