@@ -1,12 +1,13 @@
 """
 Optuna Bayesian optimizer for a single strategy.
 Creates/resumes a study per strategy (SQLite storage).
-Objective: composite_score = sharpe x (1 - max_drawdown) x profit_factor.
+Default objective: composite_score = sharpe x (1 - max_drawdown) x profit_factor.
+Pass objective_fn to override per mode (e.g. fee-adjusted Sharpe, Calmar).
 """
 from __future__ import annotations
 import os
 from pathlib import Path
-from typing import Type
+from typing import Callable, Type
 import pandas as pd
 
 from crypto_bot.core.config import Config
@@ -20,10 +21,20 @@ def optimize(
     config: Config,
     aux_data: dict | None = None,
     n_trials: int | None = None,
+    objective_fn: Callable[[BacktestResult], float] | None = None,
 ) -> dict:
     """
     Run Optuna optimization for strategy_cls. Returns best params dict.
     Resumes from existing study if storage file exists.
+
+    Args:
+        strategy_cls:  Strategy class to optimise.
+        candles_by_symbol: Training candles keyed by symbol.
+        config:        Config (provides trial count, storage path, min trades).
+        aux_data:      Optional auxiliary data (on-chain, macro, etc.).
+        n_trials:      Override config trial count.
+        objective_fn:  Scoring function (BacktestResult) -> float.
+                       When None, uses result.composite_score.
     """
     try:
         import optuna
@@ -39,6 +50,11 @@ def optimize(
 
     runner = BacktestRunner(config)
 
+    def _score(result: BacktestResult) -> float:
+        if objective_fn is not None:
+            return objective_fn(result)
+        return result.composite_score
+
     def objective(trial: "optuna.Trial") -> float:
         params = _sample_params(trial, strategy_cls)
         strategy = strategy_cls(params)
@@ -47,7 +63,7 @@ def optimize(
         if result.trades_per_year < config.optimization.min_trades_per_year:
             return -999.0
 
-        return result.composite_score
+        return _score(result)
 
     study = optuna.create_study(
         study_name=strategy_cls.__name__,

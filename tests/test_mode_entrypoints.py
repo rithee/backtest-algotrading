@@ -199,3 +199,36 @@ def test_intraday_run_accepts_n_trials_flag(capsys):
         assert result == []
     finally:
         intraday.STRATEGY_MODULE_MAP.update(original)
+
+
+# ── Task 2: optimizer custom objective ───────────────────────────────────────
+
+def test_optimizer_accepts_objective_fn():
+    """optimize() signature must accept objective_fn keyword argument."""
+    import inspect
+    from backtest.optimizer import optimize
+    sig = inspect.signature(optimize)
+    assert "objective_fn" in sig.parameters, "objective_fn param missing from optimize()"
+
+
+def test_optimizer_objective_fn_is_none_by_default():
+    """objective_fn defaults to None (backward compatible)."""
+    import inspect
+    from backtest.optimizer import optimize
+    sig = inspect.signature(optimize)
+    default = sig.parameters["objective_fn"].default
+    assert default is None
+
+
+def test_spot_mode_wires_calmar_to_optimizer():
+    """spot_longterm._run_single passes objective_fn=_calmar_ratio to optimize()."""
+    import inspect
+    import backtest.modes.spot_longterm as mod
+    src = inspect.getsource(mod._run_single)
+    assert "_calmar_ratio" in src, (
+        "_calmar_ratio not referenced in spot_longterm._run_single — "
+        "calmar objective not wired"
+    )
+    assert "objective_fn" in src, (
+        "objective_fn not passed in spot_longterm._run_single"
+    )

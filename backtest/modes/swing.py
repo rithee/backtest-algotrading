@@ -165,7 +165,10 @@ def run_swing(
                 print(f"[swing/{name}] ERROR: {exc}")
 
     if save_csv and results:
-        save_results_csv([r.result for r in results], "results/swing_results.csv")
+        from backtest.analyze import AnalysisDisplay
+        AnalysisDisplay.export_summary_csv(
+            [r.result for r in results], "results/swing_summary.csv"
+        )
 
     promoted = [r for r in results if r.promoted]
     print(f"\n[swing] {len(promoted)}/{len(results)} strategies promoted.")

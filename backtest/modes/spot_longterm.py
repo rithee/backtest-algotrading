@@ -96,7 +96,10 @@ def _run_single(
     calmar = _calmar_ratio(initial)
     if calmar < 0.5 or initial.trades_per_year < 2:
         print(f"[spot/{strategy_cls_name}] calmar={calmar:.2f} — optimising")
-        best_params = optimize(strategy_cls, candles_by_symbol, cfg, aux_data)
+        best_params = optimize(
+            strategy_cls, candles_by_symbol, cfg, aux_data,
+            objective_fn=_calmar_ratio,
+        )
 
     final = runner.run(strategy_cls(best_params), candles_by_symbol, candles_by_tf, aux_data)
     wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20)
@@ -186,7 +189,10 @@ def run_spot(
                 print(f"[spot/{name}] ERROR: {exc}")
 
     if save_csv and results:
-        save_results_csv([r.result for r in results], "results/spot_results.csv")
+        from backtest.analyze import AnalysisDisplay
+        AnalysisDisplay.export_summary_csv(
+            [r.result for r in results], "results/spot_summary.csv"
+        )
 
     promoted = [r for r in results if r.promoted]
     print(f"\n[spot] {len(promoted)}/{len(results)} strategies promoted.")
