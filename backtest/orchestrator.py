@@ -77,11 +77,16 @@ def _run_single_strategy(
         "SupertrendADXStrategy":        "crypto_bot.core.signals.strategies.supertrend_adx",
         "BBMeanReversionStrategy":      "crypto_bot.core.signals.strategies.bb_mean_reversion",
         "FundingRateReversionStrategy": "crypto_bot.core.signals.strategies.funding_rate_reversion",
-        "DonchianBreakoutStrategy":     "crypto_bot.core.signals.strategies.donchian_breakout",
-        "TSMOMStrategy":                "crypto_bot.core.signals.strategies.tsmom",
-        "HMAChandelierStrategy":        "crypto_bot.core.signals.strategies.hma_chandelier",
-        "AdaptiveTrendStrategy":        "crypto_bot.core.signals.strategies.adaptive_trend",
-        "VWAPBreakoutStrategy":         "crypto_bot.core.signals.strategies.vwap_breakout",
+        "DonchianBreakoutStrategy":          "crypto_bot.core.signals.strategies.donchian_breakout",
+        "TSMOMStrategy":                     "crypto_bot.core.signals.strategies.tsmom",
+        "HMAChandelierStrategy":             "crypto_bot.core.signals.strategies.hma_chandelier",
+        "AdaptiveTrendStrategy":             "crypto_bot.core.signals.strategies.adaptive_trend",
+        "VWAPBreakoutStrategy":              "crypto_bot.core.signals.strategies.vwap_breakout",
+        "IchimokuCloudStrategy":             "crypto_bot.core.signals.strategies.ichimoku_cloud",
+        "StochRSIStrategy":                  "crypto_bot.core.signals.strategies.stoch_rsi",
+        "MACDHistDivergenceStrategy":        "crypto_bot.core.signals.strategies.macd_hist_divergence",
+        "MarketRegimeStrategy":              "crypto_bot.core.signals.strategies.market_regime",
+        "OpenInterestDivergenceStrategy":    "crypto_bot.core.signals.strategies.open_interest_divergence",
     }
     module = importlib.import_module(strategy_module_map[strategy_cls_name])
     strategy_cls = getattr(module, strategy_cls_name)
@@ -145,6 +150,8 @@ def run_all(
         "SupertrendADXStrategy", "BBMeanReversionStrategy", "FundingRateReversionStrategy",
         "DonchianBreakoutStrategy", "TSMOMStrategy", "HMAChandelierStrategy",
         "AdaptiveTrendStrategy", "VWAPBreakoutStrategy",
+        "IchimokuCloudStrategy", "StochRSIStrategy", "MACDHistDivergenceStrategy",
+        "MarketRegimeStrategy", "OpenInterestDivergenceStrategy",
     ]
 
     config_dict = config.model_dump()

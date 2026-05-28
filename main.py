@@ -96,11 +96,16 @@ def _run_single(config, candles_by_symbol, strategy_name, args) -> None:
         "BBMeanReversionStrategy":      "crypto_bot.core.signals.strategies.bb_mean_reversion",
         "FundingRateReversionStrategy": "crypto_bot.core.signals.strategies.funding_rate_reversion",
         "XGBoostMetaStrategy":          "crypto_bot.core.signals.strategies.xgboost_meta",
-        "DonchianBreakoutStrategy":     "crypto_bot.core.signals.strategies.donchian_breakout",
-        "TSMOMStrategy":                "crypto_bot.core.signals.strategies.tsmom",
-        "HMAChandelierStrategy":        "crypto_bot.core.signals.strategies.hma_chandelier",
-        "AdaptiveTrendStrategy":        "crypto_bot.core.signals.strategies.adaptive_trend",
-        "VWAPBreakoutStrategy":         "crypto_bot.core.signals.strategies.vwap_breakout",
+        "DonchianBreakoutStrategy":          "crypto_bot.core.signals.strategies.donchian_breakout",
+        "TSMOMStrategy":                     "crypto_bot.core.signals.strategies.tsmom",
+        "HMAChandelierStrategy":             "crypto_bot.core.signals.strategies.hma_chandelier",
+        "AdaptiveTrendStrategy":             "crypto_bot.core.signals.strategies.adaptive_trend",
+        "VWAPBreakoutStrategy":              "crypto_bot.core.signals.strategies.vwap_breakout",
+        "IchimokuCloudStrategy":             "crypto_bot.core.signals.strategies.ichimoku_cloud",
+        "StochRSIStrategy":                  "crypto_bot.core.signals.strategies.stoch_rsi",
+        "MACDHistDivergenceStrategy":        "crypto_bot.core.signals.strategies.macd_hist_divergence",
+        "MarketRegimeStrategy":              "crypto_bot.core.signals.strategies.market_regime",
+        "OpenInterestDivergenceStrategy":    "crypto_bot.core.signals.strategies.open_interest_divergence",
     }
     import importlib
     if strategy_name not in strategy_module_map:
