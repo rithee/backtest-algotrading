@@ -18,26 +18,57 @@
 
 ## 1. Quick Start
 
+### Linux / macOS
+
 ```bash
 # Install dependencies
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt   # or: pip install pandas numpy pydantic optuna xgboost scikit-learn pyarrow tabulate requests python-binance pyyaml matplotlib
+pip install -r requirements.txt
 
 # Run full backtest (fetches data automatically if cache is empty)
-.venv/bin/python main.py --mode backtest --config config/settings.yaml
+python main.py
 
-# Run a single strategy only
-.venv/bin/python main.py --mode backtest --config config/settings.yaml --strategy RSIDivergenceStrategy
+# Run a single strategy only (fastest — good first test)
+python main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward
 
-# Run without optimization (faster, uses default params)
-.venv/bin/python main.py --mode backtest --config config/settings.yaml --no-optimize
+# Run a single strategy with full pipeline (optimize + walk-forward)
+python main.py --strategy IchimokuCloudStrategy
 
-# Run without walk-forward validation
-.venv/bin/python main.py --mode backtest --config config/settings.yaml --no-walk-forward
+# Run without optimization (uses default params, much faster)
+python main.py --no-optimize
 
 # Run single-threaded (debug mode)
-.venv/bin/python main.py --mode backtest --config config/settings.yaml --no-parallel
+python main.py --no-parallel --no-optimize --no-walk-forward
 ```
+
+### Windows (Command Prompt or PowerShell)
+
+```cmd
+:: Step 1 — Create virtual environment
+python -m venv .venv
+
+:: Step 2 — Activate (Command Prompt)
+.venv\Scripts\activate.bat
+
+:: Step 2 — Activate (PowerShell — if above doesn't work)
+::   If you get "scripts cannot be run", first run:
+::   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+.venv\Scripts\Activate.ps1
+
+:: Step 3 — Install dependencies
+pip install -r requirements.txt
+
+:: Step 4 — Run (use --no-parallel on Windows to avoid multiprocessing issues)
+python main.py --no-parallel --no-optimize --no-walk-forward
+
+:: Run a single strategy
+python main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward
+
+:: Full pipeline for a single strategy
+python main.py --strategy IchimokuCloudStrategy
+```
+
+> **Windows multiprocessing note:** The `ProcessPoolExecutor` used for parallel runs can behave differently on Windows due to how it spawns processes. If you see `BrokenProcessPool` or `EOFError`, use `--no-parallel`. Sequential execution is slightly slower but fully stable on Windows.
 
 **No API key required for backtesting.** Binance historical OHLCV data is publicly accessible without authentication.
 
@@ -109,7 +140,7 @@ This is identical to what a real trader can do — you see the candle close, dec
 
 ### Capital Isolation
 
-Each strategy runs with completely separate capital. A drawdown in EMARibbon does not affect TTMSqueeze's capital. This reflects running 8 independent strategy accounts.
+Each strategy runs with completely separate capital. A drawdown in EMARibbon does not affect TTMSqueeze's capital. This reflects running 16 independent strategy accounts.
 
 ---
 
@@ -347,15 +378,211 @@ Exits when price crosses back through the Donchian midline (mean of upper + lowe
 
 ---
 
+### Strategy 9: Time-Series Momentum (`TSMOMStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/tsmom.py`
+
+**Logic:** Classic quantitative momentum — measures the sign of returns over a trailing lookback window. Long if the asset is up over the window; short if down. Filters by momentum strength exceeding a minimum threshold. Exits when momentum reverses sign.
+
+**Best regime:** Sustained trending markets (bull runs, bear markets). Under-performs in choppy, mean-reverting conditions.
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `lookback_period` | 20–120 | 60 |
+| `momentum_threshold` | 0.01–0.10 | 0.03 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 10: HMA + Chandelier Exit (`HMAChandelierStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/hma_chandelier.py`
+
+**Logic:** Hull Moving Average (reduces lag vs EMA) determines trend direction. Chandelier Exit (highest high / lowest low over N bars minus ATR multiple) acts as an adaptive trailing stop. Enters on HMA direction change; exits when Chandelier stop is breached.
+
+**Best regime:** Trending markets. The HMA reacts faster to reversals than EMA-based strategies.
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `hma_period` | 20–60 | 40 |
+| `chandelier_period` | 10–30 | 22 |
+| `chandelier_mult` | 2.0–4.0 | 3.0 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 11: VWAP Breakout (`VWAPBreakoutStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/vwap_breakout.py`
+
+**Logic:** Tracks rolling VWAP with standard-deviation bands. Enters when price breaks decisively above/below a band AND volume confirms the move (volume z-score > threshold). Exits when price returns to VWAP midline.
+
+**Best regime:** High-volume breakout sessions. VWAP deviation is most meaningful when volume is elevated.
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `vwap_period` | 20–100 | 50 |
+| `band_std` | 1.5–3.0 | 2.0 |
+| `vol_zscore_threshold` | 1.0–3.0 | 1.5 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 12: Ichimoku Cloud (`IchimokuCloudStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/ichimoku_cloud.py`
+
+**Logic:** Full five-component Ichimoku system. Enters LONG when all three conditions are true simultaneously:
+1. Price is **above the cloud** (above both Senkou Span A and B)
+2. **Tenkan-sen ≥ Kijun-sen** (conversion line at or above base line)
+3. **Chikou Span is above price** 26 bars ago (lagging span confirms bullish momentum)
+
+Exits when any condition flips bearish. Mirror logic for SHORT entries.
+
+**Why all three matter:**
+- Cloud = medium-term support/resistance zone — price above cloud = bullish structure
+- Tenkan/Kijun cross = short-term momentum aligned
+- Chikou Span = confirmation from 26 bars ago that the prior price level was lower (not in a chop zone)
+
+**Best regime:** Sustained trending markets. The three-condition gate eliminates almost all false signals in ranging markets.
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `tenkan_period` | 7–12 | 9 |
+| `kijun_period` | 22–30 | 26 |
+| `senkou_b_period` | 44–60 | 52 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 13: Stochastic RSI (`StochRSIStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/stoch_rsi.py`
+
+**Logic:** Applies the Stochastic formula to RSI values (not price), producing %K and %D lines in a 0–100 range. Enters LONG when %K **crosses above** %D while both lines are in oversold territory (< 20). Enters SHORT when %K **crosses below** %D while both are in overbought territory (> 80). Exits on reverse cross or when momentum reaches the neutral zone (40–60).
+
+**Why StochRSI over plain Stochastic:**
+- RSI is already normalised — applying Stochastic to it produces a faster, more sensitive oscillator
+- The double-smoothing (%K and %D) filters out single-bar noise while still catching momentum turns early
+
+**Best regime:** Ranging or mildly trending markets. Overbought/oversold signals are most reliable when the market is not in a strong trend (in a strong trend, RSI stays extreme for extended periods).
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `rsi_period` | 10–21 | 14 |
+| `stoch_period` | 10–21 | 14 |
+| `smooth_k` | 2–5 | 3 |
+| `smooth_d` | 2–5 | 3 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 14: MACD Histogram Divergence (`MACDHistDivergenceStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/macd_hist_divergence.py`
+
+**Logic:** Counter-trend divergence strategy. **Bullish divergence:** price makes a lower low but MACD histogram makes a higher low (while histogram is still negative) — momentum is weakening even as price falls → anticipate reversal LONG. **Bearish divergence:** price makes a higher high but histogram makes a lower high (while positive) → anticipate reversal SHORT.
+
+Exits when the histogram crosses zero in the opposite direction (momentum fully reverses).
+
+**Important:** This strategy fires **against** the prevailing price direction — it is a counter-trend, reversal strategy. It naturally underperforms in strongly trending markets and outperforms near turning points.
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `macd_fast` | 8–16 | 12 |
+| `macd_slow` | 20–30 | 26 |
+| `macd_signal` | 7–12 | 9 |
+| `divergence_lookback` | 3–10 | 5 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 15: Market Regime Classifier (`MarketRegimeStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/market_regime.py`
+
+**Logic:** Classifies the current market into one of four regimes using three indicators simultaneously:
+- **VOLATILE:** ATR > `atr_vol_threshold` × ATR rolling mean — abnormally high volatility, regime unreliable
+- **UPTREND:** ADX > trend threshold AND EMA slope positive
+- **DOWNTREND:** ADX > trend threshold AND EMA slope negative
+- **RANGING:** ADX < range threshold — no directional conviction
+
+Enters LONG on UPTREND detection, SHORT on DOWNTREND. Exits immediately when regime transitions to RANGING or VOLATILE (conditions no longer valid).
+
+**Why regime classification matters:**
+- Trend-following strategies fail in ranging markets; mean-reversion strategies fail in trends
+- ADX alone doesn't distinguish up from down trend; combining with EMA slope fixes this
+- The VOLATILE exit is critical for crypto — extreme volatility events (flash crashes, liquidation cascades) invalidate trend signals
+
+**Best regime:** All market conditions — this strategy adapts to what the market is doing rather than assuming a fixed regime.
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `adx_period` | 10–20 | 14 |
+| `adx_trend_threshold` | 20.0–30.0 | 25.0 |
+| `adx_range_threshold` | 15.0–25.0 | 20.0 |
+| `ema_period` | 50–200 | 100 |
+| `slope_lookback` | 3–10 | 5 |
+| `atr_vol_threshold` | 1.5–3.0 | 2.0 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
+### Strategy 16: Open Interest Divergence (`OpenInterestDivergenceStrategy`)
+
+**File:** `crypto_bot/core/signals/strategies/open_interest_divergence.py`
+
+**Logic:** Uses Binance Futures open interest data to identify trapped positions. **LONG signal:** OI rising (positions being added) + price falling + RSI < 45 → shorts are trapped, a squeeze is likely. **SHORT signal:** OI rising + price rising + RSI > 55 → longs are over-extended, an unwind is likely. **Exit:** OI drops sharply (positions are being closed = the squeeze/unwind is over).
+
+**Requires:** `aux_data["open_interest"]` — a `pd.Series` with timestamp index. Fetched via `fetch_open_interest()` in `binance_history.py`. Returns `[]` gracefully if data is absent.
+
+**Why OI divergence works:**
+- Rising OI + price move = new money entering the market in that direction
+- When OI rises but price moves against the new positions, those traders are immediately underwater
+- The resulting forced liquidations create explosive counter-moves — this strategy tries to front-run the squeeze
+
+**Best regime:** Volatile derivatives markets with high OI activity. Most reliable around major news events and liquidation cascades.
+
+**Fetching OI data:**
+```python
+from crypto_bot.core.data.binance_history import fetch_open_interest
+
+oi = fetch_open_interest("BTCUSDT", "4h", "2020-01-01", "2024-12-31")
+aux_data = {"open_interest": oi}
+```
+
+**Param space:**
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `oi_change_period` | 3–10 | 5 |
+| `oi_surge_pct` | 0.5–3.0 | 1.5 |
+| `rsi_period` | 10–21 | 14 |
+| `atr_period` | 10–20 | 14 |
+
+---
+
 ## 5. Running the Backtest
 
 ### All Strategies (Default)
 
+**Linux / macOS:**
 ```bash
-.venv/bin/python main.py --mode backtest --config config/settings.yaml
+python main.py
 ```
 
-Runs all 8 strategies in parallel (6 at a time). For each strategy:
+**Windows:**
+```cmd
+python main.py --no-parallel
+```
+
+Runs all 16 strategies (6 at a time on Linux, sequential on Windows). For each strategy:
 1. Runs initial backtest with default params
 2. If `composite_score ≤ 0` or `trades_per_year < 30`, triggers Optuna (500 trials)
 3. Runs walk-forward validation
@@ -365,12 +592,15 @@ Runs all 8 strategies in parallel (6 at a time). For each strategy:
 ### Single Strategy
 
 ```bash
-# Available strategy names:
-# EMARibbonStrategy, TTMSqueezeStrategy, RSIDivergenceStrategy,
-# SupertrendADXStrategy, BBMeanReversionStrategy,
-# FundingRateReversionStrategy, DonchianBreakoutStrategy
+# Available strategy names (all platforms):
+# EMARibbonStrategy         TTMSqueezeStrategy        RSIDivergenceStrategy
+# SupertrendADXStrategy     BBMeanReversionStrategy   FundingRateReversionStrategy
+# DonchianBreakoutStrategy  TSMOMStrategy             HMAChandelierStrategy
+# AdaptiveTrendStrategy     VWAPBreakoutStrategy      IchimokuCloudStrategy
+# StochRSIStrategy          MACDHistDivergenceStrategy MarketRegimeStrategy
+# OpenInterestDivergenceStrategy
 
-.venv/bin/python main.py --mode backtest --config config/settings.yaml --strategy DonchianBreakoutStrategy
+python main.py --strategy IchimokuCloudStrategy
 ```
 
 ### Speed vs Depth Trade-offs
@@ -379,16 +609,19 @@ Runs all 8 strategies in parallel (6 at a time). For each strategy:
 |------|--------|-------------|
 | `--no-optimize` | Skip Optuna, use default params | Quick sanity check |
 | `--no-walk-forward` | Skip 16-window WFV | When iterating on a new strategy |
-| `--no-parallel` | Single process, sequential | Debugging crashes or pickling errors |
+| `--no-parallel` | Single process, sequential | Windows, or debugging crashes / pickling errors |
 | Both `--no-optimize --no-walk-forward` | Fastest run | Initial development |
 
 ### Estimated Run Times
 
-| Mode | Time estimate |
-|------|--------------|
-| All strategies, no optimize, no WFV | ~30 seconds |
-| Single strategy, with optimize (500 trials) | ~5–15 minutes |
-| All strategies, full pipeline | ~60–120 minutes |
+| Mode | Platform | Time estimate |
+|------|----------|--------------|
+| Single strategy, no optimize, no WFV | Any | ~5–30 seconds |
+| All strategies, no optimize, no WFV | Linux | ~2 minutes |
+| All strategies, no optimize, no WFV | Windows (sequential) | ~5 minutes |
+| Single strategy, full pipeline | Any | ~5–15 minutes |
+| All strategies, full pipeline | Linux (6 parallel) | ~60–120 minutes |
+| All strategies, full pipeline | Windows (sequential) | ~3–5 hours |
 
 ---
 
@@ -601,6 +834,27 @@ aux_data = {"funding_rates": pd.concat([df_btc, df_eth])}
 
 Without funding rate data, `FundingRateReversionStrategy` produces zero signals (by design — it logs a warning and returns empty).
 
+### Open Interest Data (Required for OpenInterestDivergenceStrategy)
+
+Open interest history is available for Binance Futures perpetuals. Fetched and cached automatically:
+
+```python
+from crypto_bot.core.data.binance_history import fetch_open_interest
+
+# Fetch OI for a symbol (cached to data/cache/ as parquet)
+oi_btc = fetch_open_interest("BTCUSDT", "4h", "2020-01-01", "2024-12-31")
+oi_eth = fetch_open_interest("ETHUSDT", "4h", "2020-01-01", "2024-12-31")
+
+# Pass to BacktestRunner
+aux_data = {
+    "open_interest": oi_btc,   # pd.Series with timestamp index
+}
+```
+
+Cache location: `data/cache/BTCUSDT_oi_4h_2020-01-01_2024-12-31.parquet`
+
+Without OI data, `OpenInterestDivergenceStrategy` returns `[]` (graceful degradation — no error, no signals).
+
 ### Data Quality
 
 The validator (`core/data/validator.py`) checks each candle:
@@ -646,14 +900,45 @@ Otherwise Optuna will try to resume a study whose parameter space no longer matc
 
 ### Memory error on parallel run
 
-Reduce `max_workers`:
+Reduce `max_workers` or use `--no-parallel`:
 
 ```bash
-.venv/bin/python main.py --mode backtest --config config/settings.yaml
-# Edit main.py _run_backtest to pass max_workers=2
+python main.py --no-parallel
 ```
 
-Or use `--no-parallel` to run sequentially.
+Or edit `main.py` and change `max_workers=6` to `max_workers=2` in `_run_backtest()`.
+
+### Windows: BrokenProcessPool or EOFError
+
+Windows spawns new Python interpreter processes for `ProcessPoolExecutor` which can fail in some environments. Use `--no-parallel`:
+
+```cmd
+python main.py --no-parallel
+```
+
+### Windows: "python" not found
+
+If `python` is not recognised, try `py` instead:
+
+```cmd
+py main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward
+```
+
+Or ensure Python was added to PATH during installation (re-run the Python installer and check "Add Python to PATH").
+
+### Windows: PowerShell execution policy error
+
+```
+.venv\Scripts\Activate.ps1 cannot be loaded because running scripts is disabled
+```
+
+Fix by setting execution policy for the current user:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Then re-run `.venv\Scripts\Activate.ps1`.
 
 ### Results directory
 
