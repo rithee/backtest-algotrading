@@ -136,6 +136,87 @@ def fetch_funding_rates(
     return df
 
 
+_OI_PERIOD_MAP = {
+    "5m": "5m", "15m": "15m", "30m": "30m",
+    "1h": "1h", "2h": "2h",  "4h": "4h",
+    "6h": "6h", "12h": "12h", "1d": "1d",
+}
+
+_TIMEFRAME_MS = {
+    "1m": 60_000,      "5m": 300_000,     "15m": 900_000,
+    "30m": 1_800_000,  "1h": 3_600_000,   "2h": 7_200_000,
+    "4h": 14_400_000,  "6h": 21_600_000,  "12h": 43_200_000,
+    "1d": 86_400_000,
+}
+
+
+def fetch_open_interest(
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    api_key: str = "",
+    api_secret: str = "",
+) -> pd.Series:
+    """
+    Fetch historical open interest from Binance Futures.
+    Returns pd.Series with timestamp index and float values, name='open_interest'.
+    Cached to data/cache/<symbol>_oi_<timeframe>_<start>_<end>.parquet.
+    """
+    cache = CACHE_DIR / f"{symbol}_oi_{timeframe}_{start_date}_{end_date}.parquet"
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    if cache.exists():
+        df = pd.read_parquet(cache)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        s = df.set_index("timestamp")["open_interest"]
+        s.name = "open_interest"
+        return s
+
+    client     = Client(api_key, api_secret)
+    period     = _OI_PERIOD_MAP.get(timeframe, "4h")
+    tf_ms      = _TIMEFRAME_MS.get(timeframe, 14_400_000)
+    start_ms   = _to_ms(start_date)
+    end_ms     = _to_ms(end_date)
+    batch_size = 500
+
+    records: list[dict] = []
+    current_ms = start_ms
+
+    while current_ms < end_ms:
+        batch = client.futures_open_interest_hist(
+            symbol=symbol,
+            period=period,
+            startTime=current_ms,
+            endTime=min(current_ms + batch_size * tf_ms, end_ms),
+            limit=batch_size,
+        )
+        if not batch:
+            break
+        for item in batch:
+            ts = datetime.fromtimestamp(
+                item["timestamp"] / 1000, tz=timezone.utc
+            ).replace(tzinfo=None)
+            records.append({
+                "timestamp":     ts,
+                "open_interest": float(item["sumOpenInterest"]),
+            })
+        last_ts = batch[-1]["timestamp"]
+        if last_ts >= end_ms:
+            break
+        current_ms = last_ts + 1
+        time.sleep(0.1)
+
+    if not records:
+        return pd.Series(dtype=float, name="open_interest")
+
+    df = pd.DataFrame(records)
+    df.to_parquet(cache, index=False)
+    s = df.set_index("timestamp")["open_interest"]
+    s.name = "open_interest"
+    return s
+
+
 def _to_ms(date_str: str) -> int:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
