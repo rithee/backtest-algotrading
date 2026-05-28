@@ -193,3 +193,70 @@ def bb_width(close: pd.Series, period: int = 20, std_dev: float = 2.0) -> pd.Ser
     """Bollinger Band Width normalised by middle band."""
     upper, middle, lower = bollinger_bands(close, period, std_dev)
     return (upper - lower) / middle.replace(0, np.nan)
+
+
+def donchian_channels(
+    high: pd.Series, low: pd.Series, period: int = 20
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    Donchian Channels.
+    Returns (upper, middle, lower).
+    upper = highest high over period, lower = lowest low over period.
+    """
+    upper = high.rolling(period).max()
+    lower = low.rolling(period).min()
+    middle = (upper + lower) / 2
+    return upper, middle, lower
+
+
+def wma(series: pd.Series, period: int) -> pd.Series:
+    """Weighted Moving Average — linearly increasing weights."""
+    weights = np.arange(1, period + 1, dtype=float)
+    w_sum = weights.sum()
+    return series.rolling(period).apply(lambda x: np.dot(x, weights) / w_sum, raw=True)
+
+
+def hma(series: pd.Series, period: int) -> pd.Series:
+    """
+    Hull Moving Average — near-zero lag moving average.
+    HMA(n) = WMA(2×WMA(n/2) − WMA(n), sqrt(n))
+    """
+    half = wma(series, max(2, period // 2))
+    full = wma(series, period)
+    raw  = 2 * half - full
+    return wma(raw, max(2, int(np.sqrt(period))))
+
+
+def chandelier_exit(
+    high: pd.Series, low: pd.Series, close: pd.Series,
+    period: int = 22, multiplier: float = 3.0
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Chandelier Exit trailing stops.
+    Returns (long_stop, short_stop).
+    long_stop  = highest_high(period) - multiplier × ATR(period)
+    short_stop = lowest_low(period)  + multiplier × ATR(period)
+    """
+    atr_vals     = atr(high, low, close, period)
+    long_stop    = high.rolling(period).max() - multiplier * atr_vals
+    short_stop   = low.rolling(period).min()  + multiplier * atr_vals
+    return long_stop, short_stop
+
+
+def rolling_vwap(
+    high: pd.Series, low: pd.Series, close: pd.Series,
+    volume: pd.Series, period: int = 20
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Rolling VWAP with standard deviation band.
+    Returns (vwap, vwap_std).
+    vwap = sum(typical_price × volume, period) / sum(volume, period)
+    vwap_std = volume-weighted std of typical_price around vwap
+    """
+    typical = (high + low + close) / 3
+    vol     = volume.replace(0, np.nan)
+    tp_vol  = typical * vol
+    vwap_   = tp_vol.rolling(period).sum() / vol.rolling(period).sum()
+    variance = ((typical - vwap_) ** 2 * vol).rolling(period).sum() / vol.rolling(period).sum()
+    vwap_std_ = np.sqrt(variance.clip(lower=0))
+    return vwap_, vwap_std_

@@ -4,7 +4,7 @@ import pytest
 from crypto_bot.core.signals.indicators import (
     ema, rsi, macd, bollinger_bands, atr, adx,
     supertrend, keltner_channels, squeeze_momentum,
-    bb_percent_b, bb_width,
+    bb_percent_b, bb_width, donchian_channels,
 )
 
 
@@ -174,3 +174,101 @@ class TestBBHelpers:
         result = bb_percent_b(close, 20).dropna()
         if len(result) > 0:
             assert abs(result.iloc[-1] - 0.5) < 0.05
+
+
+class TestDonchianChannels:
+    def test_upper_is_highest_high(self, trending_up_candles):
+        high = trending_up_candles["high"]
+        low = trending_up_candles["low"]
+        upper, middle, lower = donchian_channels(high, low, period=20)
+        # upper at position i must equal max of high[i-19:i+1]
+        for i in range(25, 35):
+            expected = high.iloc[i - 19: i + 1].max()
+            assert abs(float(upper.iloc[i]) - expected) < 1e-9
+
+    def test_lower_is_lowest_low(self, trending_up_candles):
+        high = trending_up_candles["high"]
+        low = trending_up_candles["low"]
+        _, _, lower = donchian_channels(high, low, period=20)
+        for i in range(25, 35):
+            expected = low.iloc[i - 19: i + 1].min()
+            assert abs(float(lower.iloc[i]) - expected) < 1e-9
+
+    def test_middle_is_midpoint(self, trending_up_candles):
+        high = trending_up_candles["high"]
+        low = trending_up_candles["low"]
+        upper, middle, lower = donchian_channels(high, low, period=20)
+        mid_check = (upper + lower) / 2
+        pd.testing.assert_series_equal(middle, mid_check)
+
+    def test_upper_ge_lower(self, trending_up_candles):
+        high = trending_up_candles["high"]
+        low = trending_up_candles["low"]
+        upper, _, lower = donchian_channels(high, low, period=20)
+        valid = upper.dropna()
+        assert (upper.dropna() >= lower.dropna()).all()
+
+    def test_warmup_period_is_nan(self, trending_up_candles):
+        high = trending_up_candles["high"]
+        low = trending_up_candles["low"]
+        upper, _, _ = donchian_channels(high, low, period=20)
+        assert upper.iloc[:19].isna().all()
+
+
+from crypto_bot.core.signals.indicators import wma, hma, chandelier_exit, rolling_vwap
+
+
+class TestWMAAndHMA:
+    def test_wma_constant_equals_value(self):
+        s = pd.Series([50.0] * 50)
+        result = wma(s, 10).dropna()
+        assert abs(result.iloc[-1] - 50.0) < 1e-6
+
+    def test_hma_faster_than_ema_in_uptrend(self, trending_up_candles):
+        close = trending_up_candles["close"]
+        h = hma(close, 20).dropna()
+        e = close.ewm(span=20, adjust=False).mean()
+        # HMA should be closer to current price (higher) than EMA in uptrend
+        assert h.iloc[-1] > e.iloc[-1]
+
+    def test_hma_output_length_matches_input(self, trending_up_candles):
+        result = hma(trending_up_candles["close"], 16)
+        assert len(result) == len(trending_up_candles)
+
+
+class TestChandelierExit:
+    def test_long_stop_below_high(self, trending_up_candles):
+        h = trending_up_candles["high"]
+        l = trending_up_candles["low"]
+        c = trending_up_candles["close"]
+        long_stop, _ = chandelier_exit(h, l, c, 22, 3.0)
+        valid = long_stop.dropna()
+        assert (valid <= h.rolling(22).max().dropna()).all()
+
+    def test_short_stop_above_low(self, trending_down_candles):
+        h = trending_down_candles["high"]
+        l = trending_down_candles["low"]
+        c = trending_down_candles["close"]
+        _, short_stop = chandelier_exit(h, l, c, 22, 3.0)
+        valid = short_stop.dropna()
+        assert (valid >= l.rolling(22).min().dropna()).all()
+
+
+class TestRollingVWAP:
+    def test_vwap_between_high_and_low(self, trending_up_candles):
+        h = trending_up_candles["high"]
+        l = trending_up_candles["low"]
+        c = trending_up_candles["close"]
+        v = trending_up_candles["volume"]
+        vwap, _ = rolling_vwap(h, l, c, v, 20)
+        valid = vwap.dropna()
+        assert (valid >= l.rolling(20).min().dropna()).all()
+        assert (valid <= h.rolling(20).max().dropna()).all()
+
+    def test_vwap_std_non_negative(self, trending_up_candles):
+        h = trending_up_candles["high"]
+        l = trending_up_candles["low"]
+        c = trending_up_candles["close"]
+        v = trending_up_candles["volume"]
+        _, vwap_std = rolling_vwap(h, l, c, v, 20)
+        assert (vwap_std.dropna() >= 0).all()
