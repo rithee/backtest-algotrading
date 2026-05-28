@@ -232,3 +232,64 @@ def test_spot_mode_wires_calmar_to_optimizer():
     assert "objective_fn" in src, (
         "objective_fn not passed in spot_longterm._run_single"
     )
+
+
+# ── Task 4: swing/spot skip flags ────────────────────────────────────────────
+
+def test_swing_run_accepts_skip_wf_flag(capsys):
+    from backtest.modes import swing
+    original = swing.STRATEGY_MODULE_MAP.copy()
+    swing.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = swing.run_swing(save_csv=False, skip_wf=True)
+        assert result == []
+    finally:
+        swing.STRATEGY_MODULE_MAP.update(original)
+
+
+def test_swing_run_accepts_n_trials_flag(capsys):
+    from backtest.modes import swing
+    original = swing.STRATEGY_MODULE_MAP.copy()
+    swing.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = swing.run_swing(save_csv=False, n_trials=5)
+        assert result == []
+    finally:
+        swing.STRATEGY_MODULE_MAP.update(original)
+
+
+def test_spot_run_accepts_skip_wf_flag(capsys):
+    from backtest.modes import spot_longterm
+    original = spot_longterm.STRATEGY_MODULE_MAP.copy()
+    spot_longterm.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = spot_longterm.run_spot(save_csv=False, skip_wf=True)
+        assert result == []
+    finally:
+        spot_longterm.STRATEGY_MODULE_MAP.update(original)
+
+
+def test_spot_run_accepts_n_trials_flag(capsys):
+    from backtest.modes import spot_longterm
+    original = spot_longterm.STRATEGY_MODULE_MAP.copy()
+    spot_longterm.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = spot_longterm.run_spot(save_csv=False, n_trials=5)
+        assert result == []
+    finally:
+        spot_longterm.STRATEGY_MODULE_MAP.update(original)
+
+
+def test_swing_save_csv_uses_export_summary(tmp_path, monkeypatch):
+    """run_swing(save_csv=True) calls AnalysisDisplay.export_summary_csv, not save_results_csv."""
+    from backtest.modes import swing
+    from backtest.analyze import AnalysisDisplay
+    calls = []
+    monkeypatch.setattr(AnalysisDisplay, "export_summary_csv", lambda results, path: calls.append(path))
+    original = swing.STRATEGY_MODULE_MAP.copy()
+    swing.STRATEGY_MODULE_MAP.clear()
+    # Empty map → no strategies → early return, no save_csv call
+    swing.run_swing(save_csv=True)
+    # No call expected because no results
+    assert calls == []
+    swing.STRATEGY_MODULE_MAP.update(original)
