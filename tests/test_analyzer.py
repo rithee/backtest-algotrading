@@ -267,3 +267,32 @@ def test_main_analyze_mode_flag():
         cwd="/home/rithee/Desktop/backtest_test",
     )
     assert "--analyze-mode" in result.stdout
+
+
+# ── full round-trip: produce results → export CSV → read back ─────────────────
+
+def test_export_roundtrip(tmp_path):
+    """Export N results to CSV, read back, verify all strategy names present."""
+    import csv as _csv
+    names = ["Alpha", "Beta", "Gamma"]
+    results = [_make_result(n, sharpe=float(i + 1)) for i, n in enumerate(names)]
+    path = tmp_path / "roundtrip.csv"
+    AnalysisDisplay.export_summary_csv(results, str(path))
+    rows = list(_csv.DictReader(open(path)))
+    assert len(rows) == 3
+    exported_names = {row["strategy_name"] for row in rows}
+    assert exported_names == set(names)
+    # Calmar is computed correctly
+    for row in rows:
+        r = next(r for r in results if r.strategy_name == row["strategy_name"])
+        expected_calmar = round(_calmar(r), 6)
+        assert abs(float(row["calmar_ratio"]) - expected_calmar) < 1e-5
+
+def test_html_export_contains_all_strategies(tmp_path):
+    names = ["Strat1", "Strat2"]
+    results = [_make_result(n) for n in names]
+    path = tmp_path / "report.html"
+    AnalysisDisplay.export_html(results, str(path))
+    html = path.read_text()
+    for name in names:
+        assert name in html
