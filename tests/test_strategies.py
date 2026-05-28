@@ -443,3 +443,58 @@ class TestMarketRegimeStrategy:
         s = MarketRegimeStrategy({})
         for k, spec in s.param_space.items():
             assert spec[0] <= s.default_params()[k] <= spec[1]
+
+
+from crypto_bot.core.signals.strategies.open_interest_divergence import OpenInterestDivergenceStrategy
+
+
+def _make_oi_aux(candles: pd.DataFrame, direction: str = "rising") -> dict:
+    """Synthetic OI series aligned to candle timestamps."""
+    n = len(candles)
+    np.random.seed(7)
+    if direction == "rising":
+        oi = 1_000_000.0 + np.arange(n) * 3000 + np.random.randn(n) * 500
+    else:
+        oi = 1_000_000.0 - np.arange(n) * 1000 + np.random.randn(n) * 500
+    return {"open_interest": pd.Series(oi.tolist(), index=candles["timestamp"].tolist())}
+
+
+class TestOpenInterestDivergenceStrategy:
+    _p = {
+        "oi_change_period": 5, "oi_surge_pct": 1.0,
+        "rsi_period": 14, "atr_period": 14,
+    }
+
+    def test_produces_long_when_oi_rising_price_falling(self):
+        df = make_candles(300, trend="down")
+        aux = _make_oi_aux(df, direction="rising")
+        sigs = OpenInterestDivergenceStrategy(self._p).generate_signals(df, aux)
+        assert len([s for s in sigs if s.direction == "LONG"]) > 0
+
+    def test_produces_short_when_oi_rising_price_rising(self):
+        df = make_candles(300, trend="up")
+        aux = _make_oi_aux(df, direction="rising")
+        sigs = OpenInterestDivergenceStrategy(self._p).generate_signals(df, aux)
+        assert len([s for s in sigs if s.direction == "SHORT"]) > 0
+
+    def test_no_signals_short_data(self):
+        df = make_candles(10, trend="up")
+        aux = _make_oi_aux(df, direction="rising")
+        assert OpenInterestDivergenceStrategy(self._p).generate_signals(df, aux) == []
+
+    def test_valid_directions(self):
+        df = make_candles(300, trend="up")
+        aux = _make_oi_aux(df, direction="rising")
+        valid = {"LONG", "SHORT", "EXIT_LONG", "EXIT_SHORT"}
+        for s in OpenInterestDivergenceStrategy(self._p).generate_signals(df, aux):
+            assert s.direction in valid
+
+    def test_default_params_in_space(self):
+        s = OpenInterestDivergenceStrategy({})
+        for k, spec in s.param_space.items():
+            assert spec[0] <= s.default_params()[k] <= spec[1]
+
+    def test_graceful_without_aux_data(self):
+        df = make_candles(300, trend="up")
+        result = OpenInterestDivergenceStrategy(self._p).generate_signals(df, None)
+        assert result == []
