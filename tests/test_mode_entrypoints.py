@@ -110,3 +110,92 @@ def test_calmar_ratio_zero_drawdown():
         fills=[],
     )
     assert _calmar_ratio(result) == -999.0
+
+
+# ── Task 1: intraday mode completeness ───────────────────────────────────────
+
+def test_intraday_result_has_wf_and_sensitivity_fields():
+    """IntradayStrategyResult must carry wf_result and sensitivity."""
+    import dataclasses
+    from backtest.modes.intraday import IntradayStrategyResult
+    fields = {f.name for f in dataclasses.fields(IntradayStrategyResult)}
+    assert "wf_result"   in fields, "wf_result missing from IntradayStrategyResult"
+    assert "sensitivity" in fields, "sensitivity missing from IntradayStrategyResult"
+
+
+def test_fee_adjusted_sharpe_normal():
+    from backtest.modes.intraday import _fee_adjusted_sharpe
+    from backtest.runner import BacktestResult
+    from datetime import datetime
+    r = BacktestResult(strategy_name="t", mode="intraday")
+    r.sharpe_ratio = 1.5
+    r.trades_per_year = 100.0
+    r.total_fees = 50.0
+    # equity grows from 1000 to 2000 → gain = 1000, fee_pct = 0.05
+    r.equity_curve = [
+        (datetime(2023, 1, 1), 1000.0),
+        (datetime(2023, 6, 1), 2000.0),
+    ]
+    result = _fee_adjusted_sharpe(r)
+    # fee_penalty = 50/1000 = 0.05 → 1.5 * (1 - 0.05) = 1.425
+    assert abs(result - 1.425) < 1e-9
+
+
+def test_fee_adjusted_sharpe_empty_curve():
+    from backtest.modes.intraday import _fee_adjusted_sharpe
+    from backtest.runner import BacktestResult
+    r = BacktestResult(strategy_name="t", mode="intraday")
+    r.sharpe_ratio = 1.5
+    r.trades_per_year = 100.0
+    r.total_fees = 50.0
+    r.equity_curve = []
+    # Should return -999 gracefully, not IndexError
+    assert _fee_adjusted_sharpe(r) == -999.0
+
+
+def test_fee_adjusted_sharpe_low_trades():
+    from backtest.modes.intraday import _fee_adjusted_sharpe
+    from backtest.runner import BacktestResult
+    from datetime import datetime
+    r = BacktestResult(strategy_name="t", mode="intraday")
+    r.sharpe_ratio = 2.0
+    r.trades_per_year = 10.0    # below the 50 threshold
+    r.total_fees = 0.0
+    r.equity_curve = [(datetime(2023, 1, 1), 1000.0), (datetime(2024, 1, 1), 2000.0)]
+    assert _fee_adjusted_sharpe(r) == -999.0
+
+
+def test_intraday_run_accepts_skip_wf_flag(capsys):
+    """run_intraday(skip_wf=True) completes without error on empty registry."""
+    from backtest.modes import intraday
+    original = intraday.STRATEGY_MODULE_MAP.copy()
+    intraday.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = intraday.run_intraday(save_csv=False, skip_wf=True)
+        assert result == []
+    finally:
+        intraday.STRATEGY_MODULE_MAP.update(original)
+
+
+def test_intraday_run_accepts_skip_sensitivity_flag(capsys):
+    """run_intraday(skip_sensitivity=True) completes without error on empty registry."""
+    from backtest.modes import intraday
+    original = intraday.STRATEGY_MODULE_MAP.copy()
+    intraday.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = intraday.run_intraday(save_csv=False, skip_sensitivity=True)
+        assert result == []
+    finally:
+        intraday.STRATEGY_MODULE_MAP.update(original)
+
+
+def test_intraday_run_accepts_n_trials_flag(capsys):
+    """run_intraday(n_trials=10) completes without error on empty registry."""
+    from backtest.modes import intraday
+    original = intraday.STRATEGY_MODULE_MAP.copy()
+    intraday.STRATEGY_MODULE_MAP.clear()
+    try:
+        result = intraday.run_intraday(save_csv=False, n_trials=10)
+        assert result == []
+    finally:
+        intraday.STRATEGY_MODULE_MAP.update(original)
