@@ -185,3 +185,39 @@ def test_export_html_creates_parent_dir(tmp_path):
     path = tmp_path / "out" / "report.html"
     AnalysisDisplay.export_html(results, str(path))
     assert path.exists()
+
+
+# ── reporter integration ──────────────────────────────────────────────────────
+
+def test_reporter_print_strategy_report_uses_rich(capsys):
+    from backtest.reporter import print_strategy_report
+    r = _make_result("ReporterTest")
+    print_strategy_report(r)
+    captured = capsys.readouterr().out
+    # Should contain the strategy name regardless of rich/tabulate
+    assert "ReporterTest" in captured
+
+def test_reporter_print_portfolio_report(capsys):
+    from backtest.reporter import print_portfolio_report
+    results = [_make_result("P1", sharpe=1.5), _make_result("P2", sharpe=0.8)]
+    print_portfolio_report(results)
+    captured = capsys.readouterr().out
+    assert "P1" in captured
+    assert "P2" in captured
+
+def test_reporter_print_strategy_report_with_wf(capsys):
+    from backtest.reporter import print_strategy_report
+    from backtest.walk_forward import WalkForwardResult
+    r = _make_result("WFTest")
+    wf = WalkForwardResult(
+        strategy_name="WFTest",
+        windows=[],
+        oos_sharpe=1.1,
+        oos_max_drawdown=0.12,
+        oos_profit_factor=1.4,
+        consistency_score=0.8,
+        is_oos_divergence=0.95,
+    )
+    print_strategy_report(r, wf=wf)
+    captured = capsys.readouterr().out
+    assert "OOS" in captured

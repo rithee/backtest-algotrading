@@ -1,5 +1,6 @@
 """
-Performance reporter — terminal output + CSV export for single strategy and portfolio.
+Performance reporter — terminal output (rich) + CSV export for single strategy
+and portfolio.  Falls back to plain text if rich is somehow unavailable.
 """
 from __future__ import annotations
 from datetime import datetime
@@ -19,65 +20,40 @@ def print_strategy_report(
     sensitivity: Optional[SensitivityResult] = None,
     promotion_criteria: Optional[dict] = None,
 ) -> str:
-    """Print and return formatted per-strategy report."""
-    try:
-        from tabulate import tabulate
-    except ImportError:
-        tabulate = None
+    """Print and return formatted per-strategy report using rich."""
+    from backtest.analyze import AnalysisDisplay
+    from rich.console import Console
+    import io
 
-    rows = [
-        ["Total return %",       f"{result.total_return_pct * 100:.2f}%"],
-        ["Sharpe ratio (IS)",    f"{result.sharpe_ratio:.3f}"],
-        ["Sortino ratio",        f"{result.sortino_ratio:.3f}"],
-        ["Max drawdown %",       f"{result.max_drawdown_pct * 100:.2f}%"],
-        ["Max DD duration (d)",  f"{result.max_drawdown_duration_days:.1f}"],
-        ["Win rate",             f"{result.win_rate * 100:.1f}%"],
-        ["Profit factor",        f"{result.profit_factor:.3f}"],
-        ["Trades/year",          f"{result.trades_per_year:.1f}"],
-        ["Total fees",           f"${result.total_fees:.2f}"],
-        ["Total slippage",       f"${result.total_slippage:.2f}"],
-        ["Composite score",      f"{result.composite_score:.4f}"],
-        ["Total trades",         str(len(result.fills))],
-    ]
+    # Capture for return value
+    buf = io.StringIO()
+    buf_con = Console(file=buf, force_terminal=False, width=120)
+    AnalysisDisplay.detail_panel(result, wf=wf, sensitivity=sensitivity, console=buf_con)
 
-    if wf:
-        rows.extend([
-            ["OOS Sharpe",        f"{wf.oos_sharpe:.3f}"],
-            ["OOS Max DD %",      f"{wf.oos_max_drawdown * 100:.2f}%"],
-            ["OOS Profit factor", f"{wf.oos_profit_factor:.3f}"],
-            ["Consistency score", f"{wf.consistency_score * 100:.1f}%"],
-        ])
+    # Print to terminal
+    term_con = Console(width=120)
+    AnalysisDisplay.detail_panel(result, wf=wf, sensitivity=sensitivity, console=term_con)
 
-    if sensitivity:
-        rows.append(["Sensitivity", "ROBUST" if sensitivity.is_robust else "BRITTLE"])
-
-    header = f"\n{'='*50}\n  {result.strategy_name}\n{'='*50}"
-    if tabulate:
-        body = tabulate(rows, headers=["Metric", "Value"], tablefmt="simple")
-    else:
-        body = "\n".join(f"  {r[0]:<30} {r[1]}" for r in rows)
-
-    # Promotion check
-    promotion = ""
+    # Promotion check (kept for backward compat — appended after panel)
     if promotion_criteria and wf:
         criteria = promotion_criteria
         checks = {
-            "OOS Sharpe >= min": wf.oos_sharpe >= criteria.get("min_sharpe_oos", 1.0),
-            "Max drawdown <= max": wf.oos_max_drawdown <= criteria.get("max_drawdown_pct", 0.25),
+            "OOS Sharpe >= min":    wf.oos_sharpe >= criteria.get("min_sharpe_oos", 1.0),
+            "Max drawdown <= max":  wf.oos_max_drawdown <= criteria.get("max_drawdown_pct", 0.25),
             "Profit factor >= min": wf.oos_profit_factor >= criteria.get("min_profit_factor", 1.3),
-            "Trades/year >= min": result.trades_per_year >= criteria.get("min_trades_per_year", 30),
+            "Trades/year >= min":   result.trades_per_year >= criteria.get("min_trades_per_year", 30),
         }
-        passed = all(checks.values())
         if sensitivity and not sensitivity.is_robust:
-            passed = False
             checks["Sensitivity robust"] = False
-        promotion = f"\n-> PROMOTION: {'PROMOTE TO PAPER' if passed else 'REJECT'}"
+        passed = all(checks.values())
+        verdict = "PROMOTE TO PAPER" if passed else "REJECT"
+        verdict_color = "green" if passed else "red"
+        term_con.print(f"[bold]→ PROMOTION: [{verdict_color}]{verdict}[/{verdict_color}][/bold]")
         for check, ok in checks.items():
-            promotion += f"\n   {'OK' if ok else 'FAIL'} {check}"
+            color = "green" if ok else "red"
+            term_con.print(f"   [{color}]{'OK' if ok else 'FAIL'}[/{color}]  {check}")
 
-    full = header + "\n" + body + promotion
-    print(full)
-    return full
+    return buf.getvalue()
 
 
 def print_portfolio_report(results: list[BacktestResult]) -> None:
@@ -85,34 +61,15 @@ def print_portfolio_report(results: list[BacktestResult]) -> None:
     if not results:
         return
 
-    try:
-        from tabulate import tabulate
-        _tab = tabulate
-    except ImportError:
-        _tab = None
+    from backtest.analyze import AnalysisDisplay
+    from rich.console import Console
+    con = Console(width=140)
 
-    rows = []
-    for r in sorted(results, key=lambda x: x.sharpe_ratio, reverse=True):
-        rows.append([
-            r.strategy_name,
-            f"{r.total_return_pct * 100:.1f}%",
-            f"{r.sharpe_ratio:.3f}",
-            f"{r.max_drawdown_pct * 100:.1f}%",
-            f"{r.win_rate * 100:.0f}%",
-            f"{r.profit_factor:.2f}",
-            f"{r.trades_per_year:.0f}",
-        ])
-
-    headers = ["Strategy", "Return", "Sharpe", "MaxDD", "WinRate", "PF", "Trades/yr"]
-    print("\n" + "=" * 80)
-    print("  PORTFOLIO SUMMARY (ranked by Sharpe)")
-    print("=" * 80)
-    if _tab:
-        print(_tab(rows, headers=headers, tablefmt="simple"))
-    else:
-        print(" | ".join(f"{h:>12}" for h in headers))
-        for row in rows:
-            print(" | ".join(f"{v:>12}" for v in row))
+    AnalysisDisplay.summary_table(
+        results,
+        title="Portfolio Summary (ranked by Sharpe)",
+        console=con,
+    )
 
     # Correlation matrix from equity curves
     equity_dfs = {}
@@ -125,13 +82,15 @@ def print_portfolio_report(results: list[BacktestResult]) -> None:
 
     if len(equity_dfs) >= 2:
         corr_df = pd.DataFrame(equity_dfs).corr()
-        print("\n  Return Correlation Matrix:")
-        print(corr_df.round(2).to_string())
-        # Warn on high correlations
+        con.print("\n[bold]Return Correlation Matrix:[/bold]")
+        con.print(corr_df.round(2).to_string())
         for i, s1 in enumerate(corr_df.columns):
             for j, s2 in enumerate(corr_df.columns):
                 if i < j and corr_df.loc[s1, s2] > 0.8:
-                    print(f"  WARNING: {s1} and {s2} are highly correlated ({corr_df.loc[s1, s2]:.2f}) — consider dropping one")
+                    con.print(
+                        f"  [yellow]WARNING:[/yellow] {s1} and {s2} are highly "
+                        f"correlated ({corr_df.loc[s1, s2]:.2f}) — consider dropping one"
+                    )
 
 
 def save_results_csv(result: BacktestResult, output_dir: str = "results") -> None:
