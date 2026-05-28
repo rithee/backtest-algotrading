@@ -11,3 +11,17 @@ build/
 data/cache/
 data/studies/
 results/
+
+# Reddit scripts (temporary, not part of core project)
+reddit_algotrading.py
+reddit_noauth.py
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
