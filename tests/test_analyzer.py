@@ -296,3 +296,33 @@ def test_html_export_contains_all_strategies(tmp_path):
     html = path.read_text()
     for name in names:
         assert name in html
+
+
+# ── Plan 6 Task 3: optimizer CLI flags ────────────────────────────────────────
+
+def test_main_has_trials_flag():
+    import subprocess, sys
+    r = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert "--trials" in r.stdout
+
+def test_main_has_skip_wf_flag():
+    import subprocess, sys
+    r = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert "--skip-wf" in r.stdout
+
+def test_main_has_skip_sensitivity_flag():
+    import subprocess, sys
+    r = subprocess.run(
+        [sys.executable, "main.py", "--help"],
+        capture_output=True, text=True,
+        cwd="/home/rithee/Desktop/backtest_test",
+    )
+    assert "--skip-sensitivity" in r.stdout

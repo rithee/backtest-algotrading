@@ -56,6 +56,23 @@ def main() -> None:
         help="Skip walk-forward validation",
     )
     parser.add_argument(
+        "--trials",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override Optuna trial count for this run (default: from config)",
+    )
+    parser.add_argument(
+        "--skip-wf",
+        action="store_true",
+        help="Skip walk-forward validation (faster, IS-only promotion gate)",
+    )
+    parser.add_argument(
+        "--skip-sensitivity",
+        action="store_true",
+        help="Skip parameter sensitivity analysis",
+    )
+    parser.add_argument(
         "--analyze-mode",
         choices=["intraday", "swing", "spot", "all"],
         default="swing",
@@ -214,7 +231,12 @@ def _run_single_swing(config, candles_by_symbol, strategy_name, args) -> None:
 def _run_intraday_mode(config, args) -> None:
     """Run intraday futures strategies."""
     from backtest.modes.intraday import run_intraday
-    results = run_intraday(max_workers=1 if args.no_parallel else 4)
+    results = run_intraday(
+        max_workers=1 if args.no_parallel else 4,
+        n_trials=args.trials,
+        skip_wf=args.skip_wf,
+        skip_sensitivity=args.skip_sensitivity,
+    )
     if args.export:
         _export_results([r.result for r in results], "intraday", args.export)
 
@@ -222,7 +244,12 @@ def _run_intraday_mode(config, args) -> None:
 def _run_spot_mode(config, args) -> None:
     """Run long-term spot strategies."""
     from backtest.modes.spot_longterm import run_spot
-    results = run_spot(max_workers=1 if args.no_parallel else 4)
+    results = run_spot(
+        max_workers=1 if args.no_parallel else 4,
+        n_trials=args.trials,
+        skip_wf=args.skip_wf,
+        skip_sensitivity=args.skip_sensitivity,
+    )
     if args.export:
         _export_results([r.result for r in results], "spot", args.export)
 
@@ -250,19 +277,31 @@ def _run_analyze(config, args) -> None:
             if not candles_by_symbol:
                 con.print(f"[red]No candle data for {mode} — skipping[/red]")
                 continue
-            from backtest.orchestrator import run_all
-            raw = run_all(
-                candles_by_symbol, config,
-                max_workers=1 if args.no_parallel else 6,
+            from backtest.modes.swing import run_swing
+            raw = run_swing(
+                max_workers=1 if args.no_parallel else 4,
+                n_trials=args.trials,
+                skip_wf=args.skip_wf,
+                skip_sensitivity=args.skip_sensitivity,
             )
-            results = [sr.final_result for sr in raw]
+            results = [sr.result for sr in raw]
         elif mode == "intraday":
             from backtest.modes.intraday import run_intraday
-            raw = run_intraday(max_workers=1 if args.no_parallel else 4)
+            raw = run_intraday(
+                max_workers=1 if args.no_parallel else 4,
+                n_trials=args.trials,
+                skip_wf=args.skip_wf,
+                skip_sensitivity=args.skip_sensitivity,
+            )
             results = [r.result for r in raw]
         else:  # spot
             from backtest.modes.spot_longterm import run_spot
-            raw = run_spot(max_workers=1 if args.no_parallel else 4)
+            raw = run_spot(
+                max_workers=1 if args.no_parallel else 4,
+                n_trials=args.trials,
+                skip_wf=args.skip_wf,
+                skip_sensitivity=args.skip_sensitivity,
+            )
             results = [r.result for r in raw]
 
         AnalysisDisplay.summary_table(results, title=f"{mode.title()} Strategies", console=con)

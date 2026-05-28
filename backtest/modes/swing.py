@@ -59,6 +59,9 @@ def _run_single(
     candles_by_tf: dict[str, dict[str, pd.DataFrame]],
     config_dict: dict,
     aux_data: dict | None,
+    n_trials: int | None = None,
+    skip_wf: bool = False,
+    skip_sensitivity: bool = False,
 ) -> SwingStrategyResult:
     """Worker — runs inside a subprocess; must be picklable."""
     from crypto_bot.core.config import Config
@@ -82,11 +85,15 @@ def _run_single(
     best_params = default_params
     if initial.composite_score <= 0 or initial.trades_per_year < cfg.optimization.min_trades_per_year:
         print(f"[swing/{strategy_cls_name}] composite={initial.composite_score:.4f} — optimising")
-        best_params = optimize(strategy_cls, candles_by_symbol, cfg, aux_data)
+        best_params = optimize(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials=n_trials)
 
     final = runner.run(strategy_cls(best_params), candles_by_symbol, candles_by_tf, aux_data)
-    wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=30)
-    sens = analyze(strategy_cls, best_params, candles_by_symbol, cfg, aux_data)
+    wf = None
+    if not skip_wf:
+        wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=30)
+    sens = None
+    if not skip_sensitivity:
+        sens = analyze(strategy_cls, best_params, candles_by_symbol, cfg, aux_data)
 
     criteria = cfg.promotion_criteria
     promoted = (
@@ -109,6 +116,9 @@ def run_swing(
     config_path: str = CONFIG_PATH,
     max_workers: int = 4,
     save_csv: bool = True,
+    n_trials: int | None = None,
+    skip_wf: bool = False,
+    skip_sensitivity: bool = False,
 ) -> list[SwingStrategyResult]:
     """
     Run all registered swing (new) strategies.
@@ -150,6 +160,7 @@ def run_swing(
             pool.submit(
                 _run_single,
                 name, candles_by_symbol, candles_by_tf, config_dict, aux_data,
+                n_trials, skip_wf, skip_sensitivity,
             ): name
             for name in STRATEGY_MODULE_MAP
         }

@@ -72,6 +72,9 @@ def _run_single(
     candles_by_tf: dict[str, dict[str, pd.DataFrame]],
     config_dict: dict,
     aux_data: dict | None,
+    n_trials: int | None = None,
+    skip_wf: bool = False,
+    skip_sensitivity: bool = False,
 ) -> SpotStrategyResult:
     """Worker — runs inside a subprocess; must be picklable."""
     from crypto_bot.core.config import Config
@@ -98,12 +101,17 @@ def _run_single(
         print(f"[spot/{strategy_cls_name}] calmar={calmar:.2f} — optimising")
         best_params = optimize(
             strategy_cls, candles_by_symbol, cfg, aux_data,
+            n_trials=n_trials,
             objective_fn=_calmar_ratio,
         )
 
     final = runner.run(strategy_cls(best_params), candles_by_symbol, candles_by_tf, aux_data)
-    wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20)
-    sens = analyze(strategy_cls, best_params, candles_by_symbol, cfg, aux_data)
+    wf = None
+    if not skip_wf:
+        wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20)
+    sens = None
+    if not skip_sensitivity:
+        sens = analyze(strategy_cls, best_params, candles_by_symbol, cfg, aux_data)
 
     final_calmar = _calmar_ratio(final)
     promoted = (
@@ -124,6 +132,9 @@ def run_spot(
     config_path: str = CONFIG_PATH,
     max_workers: int = 4,
     save_csv: bool = True,
+    n_trials: int | None = None,
+    skip_wf: bool = False,
+    skip_sensitivity: bool = False,
 ) -> list[SpotStrategyResult]:
     """
     Run all registered long-term spot strategies.
@@ -173,6 +184,7 @@ def run_spot(
             pool.submit(
                 _run_single,
                 name, candles_by_symbol, candles_by_tf, config_dict, aux_data,
+                n_trials, skip_wf, skip_sensitivity,
             ): name
             for name in STRATEGY_MODULE_MAP
         }
