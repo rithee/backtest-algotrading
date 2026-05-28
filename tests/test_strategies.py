@@ -407,3 +407,39 @@ class TestMACDHistDivergenceStrategy:
         s = MACDHistDivergenceStrategy({})
         for k, spec in s.param_space.items():
             assert spec[0] <= s.default_params()[k] <= spec[1]
+
+
+from crypto_bot.core.signals.strategies.market_regime import MarketRegimeStrategy
+
+
+class TestMarketRegimeStrategy:
+    _p = {
+        "adx_period": 14, "adx_trend_threshold": 25.0,
+        "adx_range_threshold": 20.0, "ema_period": 50,
+        "slope_lookback": 5, "atr_vol_threshold": 2.0, "atr_period": 14,
+    }
+
+    def test_produces_long_in_uptrend(self):
+        df = make_candles(300, trend="up")
+        sigs = MarketRegimeStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "LONG"]) > 0
+
+    def test_produces_short_in_downtrend(self):
+        df = make_candles(300, trend="down")
+        sigs = MarketRegimeStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "SHORT"]) > 0
+
+    def test_no_signals_short_data(self):
+        df = make_candles(20, trend="up")
+        assert MarketRegimeStrategy(self._p).generate_signals(df) == []
+
+    def test_valid_directions(self):
+        df = make_candles(300, trend="up")
+        valid = {"LONG", "SHORT", "EXIT_LONG", "EXIT_SHORT"}
+        for s in MarketRegimeStrategy(self._p).generate_signals(df):
+            assert s.direction in valid
+
+    def test_default_params_in_space(self):
+        s = MarketRegimeStrategy({})
+        for k, spec in s.param_space.items():
+            assert spec[0] <= s.default_params()[k] <= spec[1]
