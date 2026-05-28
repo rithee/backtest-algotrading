@@ -260,3 +260,60 @@ def rolling_vwap(
     variance = ((typical - vwap_) ** 2 * vol).rolling(period).sum() / vol.rolling(period).sum()
     vwap_std_ = np.sqrt(variance.clip(lower=0))
     return vwap_, vwap_std_
+
+
+def ichimoku(
+    high: pd.Series,
+    low: pd.Series,
+    tenkan_period: int = 9,
+    kijun_period: int = 26,
+    senkou_b_period: int = 52,
+    displacement: int = 26,
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Ichimoku Cloud components.
+    Returns (tenkan_sen, kijun_sen, senkou_span_a, senkou_span_b).
+    senkou_span_a and B are shifted forward by `displacement` bars.
+    """
+    tenkan_sen    = (high.rolling(tenkan_period).max()    + low.rolling(tenkan_period).min())    / 2
+    kijun_sen     = (high.rolling(kijun_period).max()     + low.rolling(kijun_period).min())     / 2
+    senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(displacement)
+    senkou_span_b = (
+        (high.rolling(senkou_b_period).max() + low.rolling(senkou_b_period).min()) / 2
+    ).shift(displacement)
+    return tenkan_sen, kijun_sen, senkou_span_a, senkou_span_b
+
+
+def stoch_rsi(
+    close: pd.Series,
+    rsi_period: int = 14,
+    stoch_period: int = 14,
+    smooth_k: int = 3,
+    smooth_d: int = 3,
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Stochastic RSI oscillator.
+    Returns (%K, %D) both in range 0–100.
+    """
+    rsi_vals = rsi(close, rsi_period)
+    rsi_min  = rsi_vals.rolling(stoch_period).min()
+    rsi_max  = rsi_vals.rolling(stoch_period).max()
+    raw      = (rsi_vals - rsi_min) / (rsi_max - rsi_min).replace(0, np.nan)
+    k        = raw.rolling(smooth_k).mean() * 100.0
+    d        = k.rolling(smooth_d).mean()
+    return k, d
+
+
+def ema_slope(
+    close: pd.Series,
+    period: int,
+    lookback: int = 5,
+) -> pd.Series:
+    """
+    EMA slope as fractional change over `lookback` bars.
+    Returns (ema[i] - ema[i-lookback]) / ema[i-lookback].
+    Positive = rising, negative = falling.
+    """
+    ema_vals = ema(close, period)
+    prev     = ema_vals.shift(lookback)
+    return (ema_vals - prev) / prev.replace(0, np.nan)
