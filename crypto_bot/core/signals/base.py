@@ -53,3 +53,34 @@ class BaseStrategy(ABC):
             else:
                 defaults[key] = space[0]
         return defaults
+
+    @property
+    def mode(self) -> str:
+        """
+        Declares which trading mode this strategy is designed for.
+        Values: 'intraday' | 'swing' | 'spot_longterm'
+        Default is 'swing' so all existing strategies are unaffected.
+        Override in new strategies.
+        """
+        return "swing"
+
+    def generate_signals_mtf(
+        self,
+        candles_by_tf: dict[str, "pd.DataFrame"],
+        aux_data: dict[str, Any] | None = None,
+    ) -> list["Signal"]:
+        """
+        Multi-timeframe signal generation.
+        Default implementation uses the first (primary) timeframe's candles,
+        delegating to generate_signals() — backward compatible with all existing strategies.
+        Override in strategies that need cross-timeframe logic.
+
+        Args:
+            candles_by_tf: e.g. {'5m': df, '15m': df, '1h': df}
+            aux_data:      same aux_data dict as generate_signals()
+
+        Returns:
+            List of Signal objects.
+        """
+        primary_candles = next(iter(candles_by_tf.values()))
+        return self.generate_signals(primary_candles, aux_data)
