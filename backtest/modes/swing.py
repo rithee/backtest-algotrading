@@ -31,13 +31,12 @@ from backtest.reporter import print_strategy_report, save_results_csv
 # ── Strategy registry ─────────────────────────────────────────────────────────
 # Maps class name → module path. Add new swing strategies here.
 STRATEGY_MODULE_MAP: dict[str, str] = {
-    # Populated in Plan 3 — swing strategy implementations
-    # "AdaptiveKeltnerStrategy":  "crypto_bot.core.signals.strategies.swing.adaptive_keltner",
-    # "RegimeSwitchStrategy":     "crypto_bot.core.signals.strategies.swing.regime_switch",
-    # "FundingMomentumStrategy":  "crypto_bot.core.signals.strategies.swing.funding_momentum",
-    # "WyckoffAccumulationStrategy": "crypto_bot.core.signals.strategies.swing.wyckoff_accumulation",
-    # "CompositeFlowStrategy":    "crypto_bot.core.signals.strategies.swing.composite_flow",
-    # "VolatilityExpansionStrategy": "crypto_bot.core.signals.strategies.swing.volatility_expansion",
+    "WyckoffPhaseDetectorStrategy":           "crypto_bot.core.signals.strategies.swing_new.wyckoff",
+    "OnChainSmartMoneyDivergenceStrategy":     "crypto_bot.core.signals.strategies.swing_new.ocsmd",
+    "OptionsGammaMaxPainStrategy":             "crypto_bot.core.signals.strategies.swing_new.ogp",
+    "CrossAssetMomentumRegimeStrategy":        "crypto_bot.core.signals.strategies.swing_new.cam",
+    "ElliottWaveAutomatorStrategy":            "crypto_bot.core.signals.strategies.swing_new.ewa",
+    "FundingRateSqueezePredictorStrategy":     "crypto_bot.core.signals.strategies.swing_new.frsp",
 }
 
 CONFIG_PATH = "config/swing_new.yaml"
