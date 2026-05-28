@@ -33,14 +33,13 @@ from backtest.reporter import print_strategy_report, save_results_csv
 # ── Strategy registry ─────────────────────────────────────────────────────────
 # Maps class name → module path. Add new spot strategies here.
 STRATEGY_MODULE_MAP: dict[str, str] = {
-    # Populated in Plan 4 — spot strategy implementations
-    # "BTCDominanceCycleStrategy": "crypto_bot.core.signals.strategies.spot.btc_dominance_cycle",
-    # "OnChainNUPLStrategy":        "crypto_bot.core.signals.strategies.spot.onchain_nupl",
-    # "MVRVMeanReversionStrategy":  "crypto_bot.core.signals.strategies.spot.mvrv_mean_reversion",
-    # "RainbowAccumulationStrategy":"crypto_bot.core.signals.strategies.spot.rainbow_accumulation",
-    # "NVTSignalStrategy":          "crypto_bot.core.signals.strategies.spot.nvt_signal",
-    # "StockToFlowDevStrategy":     "crypto_bot.core.signals.strategies.spot.stock_to_flow_dev",
-    # "MacroCycleStrategy":         "crypto_bot.core.signals.strategies.spot.macro_cycle",
+    "MVRVZScoreCycleStrategy":              "crypto_bot.core.signals.strategies.spot_longterm.mzc",
+    "PiCycleRainbowCompositeStrategy":      "crypto_bot.core.signals.strategies.spot_longterm.pcr",
+    "HalvingCyclePhaseAllocatorStrategy":   "crypto_bot.core.signals.strategies.spot_longterm.hcpa",
+    "Top10MomentumRotationStrategy":        "crypto_bot.core.signals.strategies.spot_longterm.trmr",
+    "MacroRegimePortfolioStrategy":         "crypto_bot.core.signals.strategies.spot_longterm.mrp",
+    "OnChainAccumulationCompositeStrategy": "crypto_bot.core.signals.strategies.spot_longterm.oac",
+    "NVTSignalValuationStrategy":           "crypto_bot.core.signals.strategies.spot_longterm.nvt",
 }
 
 CONFIG_PATH = "config/spot_longterm.yaml"
