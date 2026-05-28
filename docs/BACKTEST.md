@@ -7,6 +7,14 @@
 3. [Configuration Reference](#3-configuration-reference)
 4. [Strategies](#4-strategies)
 5. [Running the Backtest](#5-running-the-backtest)
+   - [Mode Overview](#mode-overview)
+   - [Swing Mode — All 16 Strategies](#swing-mode--all-16-strategies)
+   - [Swing Mode — Single Strategy](#swing-mode--single-strategy)
+   - [Intraday Mode](#intraday-mode)
+   - [Spot Long-Term Mode](#spot-long-term-mode)
+   - [Analyze Mode](#analyze-mode)
+   - [Speed vs Depth Trade-offs](#speed-vs-depth-trade-offs)
+   - [Estimated Run Times](#estimated-run-times)
 6. [Understanding Results](#6-understanding-results)
 7. [Optimization (Optuna)](#7-optimization-optuna)
 8. [Walk-Forward Validation](#8-walk-forward-validation)
@@ -25,7 +33,7 @@
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-linux.txt
 
-# Run full backtest (fetches data automatically if cache is empty)
+# Run full swing backtest (fetches data automatically if cache is empty)
 python main.py
 
 # Run a single strategy only (fastest — good first test)
@@ -34,8 +42,17 @@ python main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward
 # Run a single strategy with full pipeline (optimize + walk-forward)
 python main.py --strategy IchimokuCloudStrategy
 
-# Run without optimization (uses default params, much faster)
-python main.py --no-optimize
+# Run all swing strategies, skip walk-forward and sensitivity (much faster)
+python main.py --skip-wf --skip-sensitivity
+
+# Run intraday mode
+python main.py --mode intraday --skip-wf --skip-sensitivity
+
+# Run spot long-term mode
+python main.py --mode spot --skip-wf --skip-sensitivity
+
+# Analyze all modes and export HTML report
+python main.py --mode analyze --analyze-mode all --export html
 
 # Run single-threaded (debug mode)
 python main.py --no-parallel --no-optimize --no-walk-forward
@@ -59,13 +76,19 @@ python -m venv .venv
 pip install -r requirements-windows.txt
 
 :: Step 4 — Run (use --no-parallel on Windows to avoid multiprocessing issues)
-python main.py --no-parallel --no-optimize --no-walk-forward
+python main.py --no-parallel --skip-wf --skip-sensitivity
 
 :: Run a single strategy
 python main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward
 
 :: Full pipeline for a single strategy
 python main.py --strategy IchimokuCloudStrategy
+
+:: Run intraday mode (no parallel for stability on Windows)
+python main.py --mode intraday --no-parallel --skip-wf --skip-sensitivity
+
+:: Export results to HTML
+python main.py --mode analyze --analyze-mode all --export html --no-parallel
 ```
 
 > **Windows multiprocessing note:** The `ProcessPoolExecutor` used for parallel runs can behave differently on Windows due to how it spawns processes. If you see `BrokenProcessPool` or `EOFError`, use `--no-parallel`. Sequential execution is slightly slower but fully stable on Windows.
@@ -570,7 +593,22 @@ aux_data = {"open_interest": oi}
 
 ## 5. Running the Backtest
 
-### All Strategies (Default)
+### Mode Overview
+
+The engine has three independent strategy modes plus an analysis mode:
+
+| `--mode` | Strategies | Config file | Default objective |
+|----------|-----------|-------------|-------------------|
+| `swing` (default) | 16 swing futures | `config/settings.yaml` | Composite score |
+| `intraday` | 6 intraday futures | `config/intraday.yaml` | Fee-adjusted Sharpe |
+| `spot` | 7 spot long-term | `config/spot_longterm.yaml` | Calmar ratio |
+| `analyze` | Runs another mode | depends on `--analyze-mode` | — |
+
+`--mode backtest` is a legacy alias for `--mode swing`.
+
+---
+
+### Swing Mode — All 16 Strategies
 
 **Linux / macOS:**
 ```bash
@@ -582,46 +620,120 @@ python main.py
 python main.py --no-parallel
 ```
 
-Runs all 16 strategies (6 at a time on Linux, sequential on Windows). For each strategy:
+Runs all 16 swing strategies (6 at a time on Linux, sequential on Windows). For each strategy:
 1. Runs initial backtest with default params
 2. If `composite_score ≤ 0` or `trades_per_year < 30`, triggers Optuna (500 trials)
-3. Runs walk-forward validation
+3. Runs walk-forward validation (rolling 12-month train / 3-month test)
 4. Runs sensitivity analysis
 5. Prints per-strategy report + saves CSV + plots equity curve
 
-### Single Strategy
+### Swing Mode — Single Strategy
 
 ```bash
-# Available strategy names (all platforms):
+# Available strategy names:
 # EMARibbonStrategy         TTMSqueezeStrategy        RSIDivergenceStrategy
 # SupertrendADXStrategy     BBMeanReversionStrategy   FundingRateReversionStrategy
-# DonchianBreakoutStrategy  TSMOMStrategy             HMAChandelierStrategy
-# AdaptiveTrendStrategy     VWAPBreakoutStrategy      IchimokuCloudStrategy
-# StochRSIStrategy          MACDHistDivergenceStrategy MarketRegimeStrategy
-# OpenInterestDivergenceStrategy
+# XGBoostMetaStrategy       DonchianBreakoutStrategy  TSMOMStrategy
+# HMAChandelierStrategy     AdaptiveTrendStrategy     VWAPBreakoutStrategy
+# IchimokuCloudStrategy     StochRSIStrategy          MACDHistDivergenceStrategy
+# MarketRegimeStrategy      OpenInterestDivergenceStrategy
 
 python main.py --strategy IchimokuCloudStrategy
 ```
 
+The `--strategy` flag runs only that strategy and also accepts `--no-optimize` and `--no-walk-forward` to skip individual pipeline stages.
+
+---
+
+### Intraday Mode
+
+```bash
+# Linux / macOS
+python main.py --mode intraday
+
+# Windows
+python main.py --mode intraday --no-parallel
+
+# Fast scan (no walk-forward, no sensitivity)
+python main.py --mode intraday --skip-wf --skip-sensitivity
+```
+
+Runs 6 intraday strategies (BTC, ETH, SOL on 1m/5m/15m/1h). Optimizer uses **fee-adjusted Sharpe** as objective (penalises strategies where fees consume a large share of gains). Promotion gate requires OOS Sharpe, OOS drawdown, and OOS profit factor to all pass.
+
+---
+
+### Spot Long-Term Mode
+
+```bash
+# Linux / macOS
+python main.py --mode spot
+
+# Windows
+python main.py --mode spot --no-parallel
+
+# Fast scan
+python main.py --mode spot --skip-wf --skip-sensitivity
+```
+
+Runs 7 spot long-term strategies (top-10 by market cap on 1d/1w). Optimizer uses **Calmar ratio** as objective (annualised return / max drawdown — prioritises capital preservation for long-term holders).
+
+---
+
+### Analyze Mode
+
+Analyze mode runs one or more strategy modes and displays rich terminal output (colour-coded tables, per-strategy panels). It does not change which strategies run.
+
+```bash
+# Analyze swing strategies
+python main.py --mode analyze --analyze-mode swing
+
+# Analyze intraday strategies and export CSV
+python main.py --mode analyze --analyze-mode intraday --export csv
+
+# Analyze all three modes combined, export HTML report
+python main.py --mode analyze --analyze-mode all --export html --no-parallel
+```
+
+Export paths:
+- `results/<analyze-mode>_summary.csv`
+- `results/<analyze-mode>_report.html`
+
+---
+
 ### Speed vs Depth Trade-offs
+
+These flags apply to all three mode runners (`--mode swing/intraday/spot/analyze`):
 
 | Flag | Effect | When to use |
 |------|--------|-------------|
-| `--no-optimize` | Skip Optuna, use default params | Quick sanity check |
-| `--no-walk-forward` | Skip 16-window WFV | When iterating on a new strategy |
-| `--no-parallel` | Single process, sequential | Windows, or debugging crashes / pickling errors |
-| Both `--no-optimize --no-walk-forward` | Fastest run | Initial development |
+| `--skip-wf` | Skip walk-forward; IS-only promotion gate | Fast dev scan, iterating on new strategy |
+| `--skip-sensitivity` | Skip parameter sensitivity analysis | When parameters are stable |
+| `--trials N` | Override Optuna trial count for this run | Quick N=20 test vs full N=500 |
+| `--no-parallel` | Single process, sequential | Windows; debugging crashes / pickling errors |
+
+For the `--strategy` single-strategy swing path, the legacy flags apply instead:
+
+| Flag | Effect |
+|------|--------|
+| `--no-optimize` | Skip Optuna, use default params |
+| `--no-walk-forward` | Skip 16-window walk-forward |
+
+---
 
 ### Estimated Run Times
 
-| Mode | Platform | Time estimate |
-|------|----------|--------------|
-| Single strategy, no optimize, no WFV | Any | ~5–30 seconds |
-| All strategies, no optimize, no WFV | Linux | ~2 minutes |
-| All strategies, no optimize, no WFV | Windows (sequential) | ~5 minutes |
-| Single strategy, full pipeline | Any | ~5–15 minutes |
-| All strategies, full pipeline | Linux (6 parallel) | ~60–120 minutes |
-| All strategies, full pipeline | Windows (sequential) | ~3–5 hours |
+| Command | Platform | Estimate |
+|---------|----------|----------|
+| Single strategy, `--no-optimize --no-walk-forward` | Any | ~5–30 seconds |
+| Swing, `--skip-wf --skip-sensitivity` | Linux | ~2–3 minutes |
+| Swing, `--skip-wf --skip-sensitivity` | Windows (sequential) | ~5–8 minutes |
+| Swing, full pipeline | Linux (6 parallel) | ~60–120 minutes |
+| Swing, full pipeline | Windows (sequential) | ~3–5 hours |
+| Intraday, `--skip-wf --skip-sensitivity` | Linux | ~3–5 minutes |
+| Intraday, full pipeline | Linux (4 parallel) | ~30–60 minutes |
+| Spot, `--skip-wf --skip-sensitivity` | Linux | ~2–4 minutes |
+| Spot, full pipeline | Linux (4 parallel) | ~20–40 minutes |
+| Analyze all modes, `--skip-wf --skip-sensitivity` | Linux | ~8–12 minutes |
 
 ---
 
@@ -700,13 +812,23 @@ Automatically triggered if the initial backtest composite score ≤ 0, or if tra
 
 Uses **Bayesian optimization** (Tree-structured Parzen Estimator — TPE) which builds a probabilistic model of the objective function. Much more efficient than random or grid search — converges to good params in 500 trials vs ~10,000 needed for grid search.
 
-**Objective function:**
-```
-composite_score = sharpe × (1 - max_drawdown) × profit_factor × trade_count_penalty
+**Per-mode objective functions:**
 
-where:
-  trade_count_penalty = 1.0 if trades/yr ≥ min_trades_per_year
-                      = trades/yr / min_trades_per_year otherwise
+| Mode | Objective | Why |
+|------|-----------|-----|
+| **Swing** | `composite_score = sharpe × (1 - max_drawdown) × profit_factor` | Balanced reward — requires both good risk-adjusted returns and positive expectancy |
+| **Intraday** | `fee_adjusted_sharpe = sharpe × (1 - fee_penalty)` where `fee_penalty = total_fees / equity_gain` | High-frequency strategies can generate good Sharpe but give most of it back in fees — this penalises fee drag directly |
+| **Spot** | `calmar_ratio = total_return / max_drawdown` | Long-term holders care most about avoiding deep drawdowns; Calmar captures this |
+
+All objectives return `-999` when `trades_per_year < min_trades_per_year` (set in config) to prevent optimising strategies that barely trade.
+
+**Controlling trial count at runtime:**
+```bash
+# Override to 50 trials for this run only (config value unchanged)
+python main.py --trials 50
+
+# Combined with mode
+python main.py --mode intraday --trials 30
 ```
 
 ### Resuming a Study
@@ -886,7 +1008,20 @@ The cache is empty and the Binance API fetch failed. Check:
 
 ### Walk-Forward takes too long
 
-Reduce `n_trials_per_window` in `backtest/orchestrator.py` from 30 to 5–10. WFV runs Optuna per window, so 16 windows × 30 trials = 480 mini-backtests.
+Use `--trials N` to reduce the Optuna trial count per walk-forward window. Each window runs a mini-optimization, so 16 windows × 30 trials = 480 mini-backtests by default. Reducing to 10 trials cuts this to 160:
+
+```bash
+# Fast WFV with only 10 trials per window
+python main.py --trials 10
+
+# Or skip walk-forward entirely (IS-only promotion gate)
+python main.py --skip-wf
+```
+
+Alternatively, skip sensitivity analysis too for maximum speed:
+```bash
+python main.py --skip-wf --skip-sensitivity --trials 20
+```
 
 ### Optuna study conflict
 
@@ -900,13 +1035,17 @@ Otherwise Optuna will try to resume a study whose parameter space no longer matc
 
 ### Memory error on parallel run
 
-Reduce `max_workers` or use `--no-parallel`:
+Use `--no-parallel` to run all strategies sequentially:
 
 ```bash
 python main.py --no-parallel
 ```
 
-Or edit `main.py` and change `max_workers=6` to `max_workers=2` in `_run_backtest()`.
+Or combine with skip flags to reduce peak memory further:
+
+```bash
+python main.py --no-parallel --skip-sensitivity
+```
 
 ### Windows: BrokenProcessPool or EOFError
 

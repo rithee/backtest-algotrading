@@ -1,6 +1,6 @@
 # Crypto Trading Bot — Backtesting Framework
 
-A production-quality backtesting engine for crypto perpetual futures strategies, built on Binance Futures historical data. Features 16 trading strategies, Bayesian parameter optimization (Optuna), walk-forward validation, and sensitivity analysis.
+A production-quality backtesting engine for crypto perpetual futures and spot strategies, built on Binance historical data. Features 29 trading strategies across three modes, Bayesian parameter optimization (Optuna), walk-forward validation, sensitivity analysis, and rich terminal reporting.
 
 ---
 
@@ -10,20 +10,30 @@ A production-quality backtesting engine for crypto perpetual futures strategies,
 - [Setup — Linux / macOS](#setup--linux--macos)
 - [Setup — Windows](#setup--windows)
 - [Quick Start](#quick-start)
+- [Three Modes Explained](#three-modes-explained)
 - [Strategies](#strategies)
 - [CLI Reference](#cli-reference)
 - [Configuration](#configuration)
+- [Output Files](#output-files)
+- [Running Tests](#running-tests)
 - [Documentation](#documentation)
 
 ---
 
 ## Features
 
-- **16 trading strategies** — trend-following, mean-reversion, breakout, oscillator, regime-based, and derivatives-based
+- **29 trading strategies across three modes:**
+  - **Swing** (16 strategies) — 4h futures, trend/mean-reversion/breakout, BTC + ETH
+  - **Intraday** (6 strategies) — 1m–1h futures, session-filtered, BTC + ETH + SOL
+  - **Spot long-term** (7 strategies) — 1d–1w spot, macro/on-chain driven, top-10 by market cap
 - **No API key required** for backtesting — Binance OHLCV data is fetched from the public REST endpoint
-- **Bayesian optimization** via Optuna (500 trials, TPE sampler) — auto-tunes every strategy's parameters
-- **Walk-forward validation** — 12-month train / 3-month test rolling windows to prevent overfitting
+- **Bayesian optimization** via Optuna (TPE sampler, per-mode objective) — auto-tunes every strategy
+- **Walk-forward validation** — rolling train/test windows to prevent overfitting
 - **Sensitivity analysis** — rejects strategies whose performance is brittle to ±20% parameter changes
+- **Per-mode optimizer objectives:** swing = composite score, intraday = fee-adjusted Sharpe, spot = Calmar ratio
+- **OOS promotion gate** — strategies must pass walk-forward OOS criteria to be promoted to paper trading
+- **Rich terminal output** — colour-coded summary tables and per-strategy detail panels
+- **Export** — results to `results/<mode>_summary.csv` or `results/<mode>_report.html`
 - **Parallel execution** — up to 6 strategies run simultaneously via `ProcessPoolExecutor`
 - **Zero lookahead bias** — signals fire on candle close; orders fill at the next candle open
 - **Auto-caching** — fetched data stored as `.parquet`; subsequent runs use cache (instant load)
@@ -122,7 +132,7 @@ python main.py --help
 
 ## Quick Start
 
-### First run (recommended — single strategy, no optimization)
+### First run — single swing strategy, no optimization (fastest)
 
 **Linux / macOS:**
 ```bash
@@ -138,20 +148,7 @@ python main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward
 
 On first run, Binance OHLCV data is automatically downloaded (~30 seconds). Subsequent runs load from cache instantly.
 
-### Run a single strategy with full pipeline
-
-```bash
-# Linux / macOS
-python main.py --strategy IchimokuCloudStrategy
-
-# Windows
-python main.py --strategy IchimokuCloudStrategy
-```
-
-This runs: default backtest → Optuna optimization (500 trials) → walk-forward validation → sensitivity analysis → print report → save CSV.
-**Takes 5–15 minutes per strategy.**
-
-### Run all 16 strategies in parallel
+### Run all 16 swing strategies
 
 ```bash
 # Linux / macOS (6 parallel workers)
@@ -161,11 +158,60 @@ python main.py
 python main.py --no-parallel
 ```
 
-Full pipeline for all strategies takes **1–3 hours**.
+Full pipeline for all strategies takes **1–3 hours**. Use `--skip-wf --skip-sensitivity` for a fast scan:
+
+```bash
+python main.py --skip-wf --skip-sensitivity    # ~5 min on Linux
+```
+
+### Run the analyze mode (rich tables + optional export)
+
+```bash
+# Analyze swing strategies with summary table + detail panels
+python main.py --mode analyze --analyze-mode swing
+
+# Analyze intraday strategies and export to CSV
+python main.py --mode analyze --analyze-mode intraday --export csv
+
+# Analyze all three modes and export an HTML report
+python main.py --mode analyze --analyze-mode all --export html
+```
+
+### Speed control flags
+
+```bash
+# Skip walk-forward (no OOS gate — uses IS metrics only)
+python main.py --skip-wf
+
+# Skip sensitivity analysis
+python main.py --skip-sensitivity
+
+# Override Optuna trial count (default: from config, usually 500)
+python main.py --trials 50
+
+# Combine for maximum speed
+python main.py --skip-wf --skip-sensitivity --trials 20
+```
+
+---
+
+## Three Modes Explained
+
+| Mode | Flag | Strategies | Timeframes | Instruments | Optimizer objective |
+|------|------|-----------|------------|-------------|---------------------|
+| **Swing** | `--mode swing` | 16 | 4h | BTC, ETH futures | Composite score |
+| **Intraday** | `--mode intraday` | 6 | 1m / 5m / 15m / 1h | BTC, ETH, SOL futures | Fee-adjusted Sharpe |
+| **Spot long-term** | `--mode spot` | 7 | 1d / 1w | Top-10 market cap spot | Calmar ratio |
+
+Each mode loads its own YAML config (`config/settings.yaml`, `config/intraday.yaml`, `config/spot_longterm.yaml`).
+
+**`--mode analyze`** runs one or more modes and displays rich tables — it doesn't change which strategies run, only the output format.
 
 ---
 
 ## Strategies
+
+### Swing Futures (16 strategies)
 
 | # | Strategy | Type | `--strategy` flag |
 |---|----------|------|-------------------|
@@ -175,18 +221,42 @@ Full pipeline for all strategies takes **1–3 hours**.
 | 4 | Supertrend + ADX | Trend-following | `SupertrendADXStrategy` |
 | 5 | Bollinger Band Mean Reversion | Mean-reversion | `BBMeanReversionStrategy` |
 | 6 | Funding Rate Reversion | Derivatives | `FundingRateReversionStrategy` |
-| 7 | Donchian Channel Breakout | Breakout | `DonchianBreakoutStrategy` |
-| 8 | Time-Series Momentum | Momentum | `TSMOMStrategy` |
-| 9 | HMA + Chandelier Exit | Trend-following | `HMAChandelierStrategy` |
-| 10 | Adaptive Trend (KAMA) | Adaptive | `AdaptiveTrendStrategy` |
-| 11 | VWAP Breakout | Breakout | `VWAPBreakoutStrategy` |
-| 12 | Ichimoku Cloud | Trend-following | `IchimokuCloudStrategy` |
-| 13 | Stochastic RSI | Oscillator | `StochRSIStrategy` |
-| 14 | MACD Histogram Divergence | Counter-trend | `MACDHistDivergenceStrategy` |
-| 15 | Market Regime Classifier | Regime-based | `MarketRegimeStrategy` |
-| 16 | Open Interest Divergence | On-chain/Derivatives | `OpenInterestDivergenceStrategy` |
+| 7 | XGBoost Meta-Classifier | ML gate | `XGBoostMetaStrategy` |
+| 8 | Donchian Channel Breakout | Breakout | `DonchianBreakoutStrategy` |
+| 9 | Time-Series Momentum | Momentum | `TSMOMStrategy` |
+| 10 | HMA + Chandelier Exit | Trend-following | `HMAChandelierStrategy` |
+| 11 | Adaptive Trend (KAMA) | Adaptive | `AdaptiveTrendStrategy` |
+| 12 | VWAP Breakout | Breakout | `VWAPBreakoutStrategy` |
+| 13 | Ichimoku Cloud | Trend-following | `IchimokuCloudStrategy` |
+| 14 | Stochastic RSI | Oscillator | `StochRSIStrategy` |
+| 15 | MACD Histogram Divergence | Counter-trend | `MACDHistDivergenceStrategy` |
+| 16 | Market Regime Classifier | Regime-based | `MarketRegimeStrategy` |
+| 17 | Open Interest Divergence | On-chain/Derivatives | `OpenInterestDivergenceStrategy` |
 
-> **Strategy 16 note:** `OpenInterestDivergenceStrategy` requires open interest data passed via `aux_data`. Without it, it returns no signals (by design — graceful degradation).
+> The `--strategy NAME` flag only applies to swing mode (`--mode swing`). Intraday and spot run all registered strategies.
+
+### Intraday Futures (6 strategies — `--mode intraday`)
+
+| Strategy | Type |
+|----------|------|
+| `LiquiditySweepReversalStrategy` | Order-flow |
+| `OpeningRangeBreakoutStrategy` | Breakout |
+| `VWAPDeltaConfluenceStrategy` | VWAP / delta |
+| `FairValueGapStrategy` | SMC / price action |
+| `LiquidationCascadeMomentumStrategy` | Derivatives |
+| `MicrostructureConsolidationBreakoutStrategy` | Microstructure |
+
+### Spot Long-Term (7 strategies — `--mode spot`)
+
+| Strategy | Type |
+|----------|------|
+| `MVRVZScoreCycleStrategy` | On-chain cycle |
+| `PiCycleRainbowCompositeStrategy` | Composite cycle |
+| `HalvingCyclePhaseAllocatorStrategy` | Macro cycle |
+| `Top10MomentumRotationStrategy` | Momentum rotation |
+| `MacroRegimePortfolioStrategy` | Macro |
+| `OnChainAccumulationCompositeStrategy` | On-chain |
+| `NVTSignalValuationStrategy` | On-chain valuation |
 
 ---
 
@@ -195,14 +265,43 @@ Full pipeline for all strategies takes **1–3 hours**.
 ```
 python main.py [options]
 
-Options:
-  --mode {backtest}        Run mode (default: backtest)
-  --config CONFIG          Path to settings YAML (default: config/settings.yaml)
-  --strategy STRATEGY      Run a single strategy by class name
-  --no-parallel            Disable parallel execution (required on some Windows setups)
-  --no-optimize            Skip Optuna optimisation (uses default params)
-  --no-walk-forward        Skip walk-forward validation
-  -h, --help               Show this message
+Mode selection:
+  --mode {swing,backtest,intraday,spot,analyze}
+                        swing / backtest  : run swing futures strategies (default)
+                        intraday          : run intraday futures strategies
+                        spot              : run long-term spot strategies
+                        analyze           : run a mode and display rich analysis
+
+  --analyze-mode {intraday,swing,spot,all}
+                        Which mode(s) to analyze (default: swing)
+                        Only used when --mode analyze is set.
+
+Strategy selection:
+  --strategy STRATEGY   Run a single swing strategy by class name
+                        (e.g. IchimokuCloudStrategy)
+
+Execution control:
+  --no-parallel         Disable parallel execution
+                        Required on some Windows setups
+  --no-optimize         Skip Optuna optimisation — uses default params
+                        (only applies to --strategy single-strategy runs)
+  --no-walk-forward     Skip walk-forward validation
+                        (only applies to --strategy single-strategy runs)
+  --trials N            Override Optuna trial count for this run
+                        (applies to all three mode runners)
+  --skip-wf             Skip walk-forward validation — IS-only promotion gate
+                        (applies to all three mode runners)
+  --skip-sensitivity    Skip parameter sensitivity analysis
+                        (applies to all three mode runners)
+
+Export:
+  --export {csv,html}   Export results:
+                          csv  → results/<mode>_summary.csv
+                          html → results/<mode>_report.html
+
+Other:
+  --config CONFIG       Path to settings YAML (default: config/settings.yaml)
+  -h, --help            Show this message
 ```
 
 ### Common command combinations
@@ -211,16 +310,32 @@ Options:
 |------|---------|
 | Fastest single-strategy test | `python main.py --strategy EMARibbonStrategy --no-optimize --no-walk-forward` |
 | Full single-strategy pipeline | `python main.py --strategy IchimokuCloudStrategy` |
-| All strategies, fast scan | `python main.py --no-optimize --no-walk-forward` |
-| All strategies, full pipeline (Linux) | `python main.py` |
-| All strategies, full pipeline (Windows) | `python main.py --no-parallel` |
-| Debug mode | `python main.py --strategy EMARibbonStrategy --no-parallel --no-optimize --no-walk-forward` |
+| All swing, fast scan | `python main.py --skip-wf --skip-sensitivity` |
+| All swing, full pipeline (Linux) | `python main.py` |
+| All swing, full pipeline (Windows) | `python main.py --no-parallel` |
+| Intraday mode, fast | `python main.py --mode intraday --skip-wf --skip-sensitivity` |
+| Spot mode, fast | `python main.py --mode spot --skip-wf --skip-sensitivity` |
+| Rich analysis, all modes, export HTML | `python main.py --mode analyze --analyze-mode all --export html` |
+| Quick 50-trial optimization | `python main.py --trials 50` |
+| Debug / single-threaded | `python main.py --strategy EMARibbonStrategy --no-parallel --no-optimize --no-walk-forward` |
+
+### Flag compatibility matrix
+
+| Flag | `--mode swing --strategy` | `--mode swing` (all) | `--mode intraday` | `--mode spot` | `--mode analyze` |
+|------|:---:|:---:|:---:|:---:|:---:|
+| `--no-optimize` | ✅ | — | — | — | — |
+| `--no-walk-forward` | ✅ | — | — | — | — |
+| `--trials N` | — | ✅ | ✅ | ✅ | ✅ |
+| `--skip-wf` | — | ✅ | ✅ | ✅ | ✅ |
+| `--skip-sensitivity` | — | ✅ | ✅ | ✅ | ✅ |
+| `--no-parallel` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `--export` | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ---
 
 ## Configuration
 
-Edit `config/settings.yaml` to change:
+Edit `config/settings.yaml` for swing mode:
 
 ```yaml
 backtest:
@@ -234,15 +349,12 @@ optimization:
   trials: 500    # Reduce to 50–100 for faster development runs
 ```
 
+Each mode has its own YAML config:
+- **Swing / legacy:** `config/settings.yaml`
+- **Intraday:** `config/intraday.yaml`
+- **Spot long-term:** `config/spot_longterm.yaml`
+
 Full configuration reference: [`docs/BACKTEST.md`](docs/BACKTEST.md#3-configuration-reference)
-
----
-
-## Documentation
-
-| Document | Contents |
-|----------|----------|
-| [`docs/BACKTEST.md`](docs/BACKTEST.md) | Full engine reference — pipeline, all strategies, optimization, walk-forward, results interpretation, troubleshooting |
 
 ---
 
@@ -250,11 +362,16 @@ Full configuration reference: [`docs/BACKTEST.md`](docs/BACKTEST.md#3-configurat
 
 All results are saved to `results/`:
 
-| File | Contents |
-|------|----------|
-| `{strategy}_fills_{timestamp}.csv` | Every trade: entry, exit, P&L, exit reason |
-| `{strategy}_equity_{timestamp}.csv` | Equity at every candle |
-| `{strategy}_equity_curve_{timestamp}.png` | Equity curve chart |
+| File | Contents | Created by |
+|------|----------|------------|
+| `swing_summary.csv` | One row per swing strategy, all metrics | `--mode swing` |
+| `intraday_summary.csv` | One row per intraday strategy | `--mode intraday` |
+| `spot_summary.csv` | One row per spot strategy | `--mode spot` |
+| `{mode}_summary.csv` | Analyze mode export | `--mode analyze --export csv` |
+| `{mode}_report.html` | Full HTML report with tables and panels | `--mode analyze --export html` |
+| `{strategy}_fills_{ts}.csv` | Every trade: entry, exit, P&L, exit reason | Single-strategy run |
+| `{strategy}_equity_{ts}.csv` | Equity at every candle | Single-strategy run |
+| `{strategy}_equity_{ts}.png` | Equity curve chart | Single-strategy run |
 
 ---
 
@@ -266,4 +383,17 @@ pytest tests/ -v
 
 # Windows
 python -m pytest tests/ -v
+
+# Quick smoke check
+pytest --tb=short -q
 ```
+
+The test suite covers the full engine including signal generation, risk engine, walk-forward, sensitivity, analysis display, and all three mode entrypoints.
+
+---
+
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [`docs/BACKTEST.md`](docs/BACKTEST.md) | Full engine reference — pipeline, all strategies, optimization, walk-forward, results interpretation, troubleshooting |
