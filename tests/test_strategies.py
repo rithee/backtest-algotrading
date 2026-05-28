@@ -370,3 +370,40 @@ class TestStochRSIStrategy:
         s = StochRSIStrategy({})
         for k, spec in s.param_space.items():
             assert spec[0] <= s.default_params()[k] <= spec[1]
+
+
+from crypto_bot.core.signals.strategies.macd_hist_divergence import MACDHistDivergenceStrategy
+
+
+class TestMACDHistDivergenceStrategy:
+    _p = {
+        "macd_fast": 12, "macd_slow": 26,
+        "macd_signal": 9, "divergence_lookback": 5, "atr_period": 14,
+    }
+
+    def test_produces_long_on_bullish_divergence(self):
+        # Bullish divergence fires in downtrends: price lower low + hist higher low
+        df = make_candles(300, trend="down")
+        sigs = MACDHistDivergenceStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "LONG"]) > 0
+
+    def test_produces_short_on_bearish_divergence(self):
+        # Bearish divergence fires in uptrends: price higher high + hist lower high
+        df = make_candles(300, trend="up")
+        sigs = MACDHistDivergenceStrategy(self._p).generate_signals(df)
+        assert len([s for s in sigs if s.direction == "SHORT"]) > 0
+
+    def test_no_signals_short_data(self):
+        df = make_candles(20, trend="up")
+        assert MACDHistDivergenceStrategy(self._p).generate_signals(df) == []
+
+    def test_valid_directions(self):
+        df = make_candles(300, trend="up")
+        valid = {"LONG", "SHORT", "EXIT_LONG", "EXIT_SHORT"}
+        for s in MACDHistDivergenceStrategy(self._p).generate_signals(df):
+            assert s.direction in valid
+
+    def test_default_params_in_space(self):
+        s = MACDHistDivergenceStrategy({})
+        for k, spec in s.param_space.items():
+            assert spec[0] <= s.default_params()[k] <= spec[1]
