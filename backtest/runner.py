@@ -167,6 +167,236 @@ class BacktestRunner:
         self.compute_metrics(result, bars_per_day=6)   # 4h candles = 6/day
         return result
 
+    def _run_spot(
+        self,
+        strategy: BaseStrategy,
+        candles_by_symbol: dict[str, pd.DataFrame],
+        candles_by_tf: dict[str, dict[str, pd.DataFrame]],
+        aux_data: dict[str, Any] | None = None,
+    ) -> BacktestResult:
+        """
+        Spot long-term runner. Key differences from _run_futures:
+        - Leverage forced to 1 (no margin, no liquidation risk)
+        - min_holding_days enforced: exit signals ignored if position held < N days
+        - Uses generate_signals_mtf for multi-timeframe strategies
+        """
+        from crypto_bot.core.config import LeverageConfig
+        from itertools import groupby
+
+        # Force leverage=1 regardless of config
+        spot_cfg = self.cfg.model_copy(
+            update={"leverage": LeverageConfig(max=1, default=1)}
+        )
+
+        result = BacktestResult(
+            strategy_name=strategy.name,
+            initial_capital=spot_cfg.backtest.initial_capital_per_strategy,
+            mode="spot_longterm",
+        )
+        risk = RiskEngine(strategy.name, spot_cfg)
+        exec_engine = PaperExecutionEngine(strategy.name, spot_cfg)
+        store = StateStore(strategy.name)
+
+        min_hold = spot_cfg.risk.min_holding_days
+        entry_timestamps: dict[str, datetime] = {}
+
+        # Generate signals — prefer MTF if candles_by_tf available
+        signal_map: dict[tuple[str, datetime], Signal] = {}
+        for symbol, df in candles_by_symbol.items():
+            if candles_by_tf.get(symbol):
+                sigs = strategy.generate_signals_mtf(candles_by_tf[symbol], aux_data)
+            else:
+                sigs = strategy.generate_signals(df, aux_data)
+            for sig in sigs:
+                signal_map[(symbol, sig.timestamp)] = sig
+
+        # Build timeline from primary candles
+        timeline: list[tuple] = []
+        for symbol, df in candles_by_symbol.items():
+            for row in df.itertuples(index=False):
+                timeline.append((row.timestamp, symbol, row.open, row.high, row.low, row.close))
+        timeline.sort(key=lambda x: x[0])
+
+        equity = spot_cfg.backtest.initial_capital_per_strategy
+
+        for ts, group in groupby(timeline, key=lambda x: x[0]):
+            group_items = list(group)
+            ts_fills: list[Fill] = []
+
+            for _, symbol, op, hi, lo, cl in group_items:
+                risk.record_price(symbol, cl)
+                new_fills = exec_engine.process_candle(
+                    symbol=symbol, timestamp=ts,
+                    open_=op, high=hi, low=lo, close=cl,
+                )
+                ts_fills.extend(new_fills)
+
+                sig = signal_map.get((symbol, ts))
+                if sig is not None:
+                    if sig.direction in ("EXIT_LONG", "EXIT_SHORT"):
+                        # Enforce min_holding_days
+                        if min_hold > 0 and symbol in entry_timestamps:
+                            days_held = (ts - entry_timestamps[symbol]).days
+                            if days_held < min_hold:
+                                continue
+                        exec_engine.schedule_exit(symbol)
+                    else:
+                        decision = risk.evaluate(sig)
+                        if decision.approved:
+                            exec_engine.schedule_entry(decision)
+                            entry_timestamps[symbol] = ts
+                            risk.open_positions[symbol] = None
+
+            for fill in ts_fills:
+                if fill.pnl is not None:
+                    equity += fill.pnl
+                    if fill.symbol in risk.open_positions and risk.open_positions[fill.symbol] is None:
+                        del risk.open_positions[fill.symbol]
+                store.record_fill(fill)
+                result.fills.append(fill)
+
+            risk.open_positions = {k: v for k, v in exec_engine.open_positions.items() if v is not None}
+            risk.update_equity(equity)
+            store.record_equity(ts, equity)
+            result.equity_curve.append((ts, equity))
+
+        last_ts = timeline[-1][0] if timeline else datetime.utcnow()
+        for symbol, df in candles_by_symbol.items():
+            last_row = df.iloc[-1]
+            fill = exec_engine.close_at_end(symbol, last_ts, float(last_row["close"]))
+            if fill:
+                if fill.pnl:
+                    equity += fill.pnl
+                store.record_fill(fill)
+                result.fills.append(fill)
+
+        store.close()
+        self.compute_metrics(result, bars_per_day=1)   # 1d/1w candles
+        return result
+
+    def _run_intraday(
+        self,
+        strategy: BaseStrategy,
+        candles_by_symbol: dict[str, pd.DataFrame],
+        candles_by_tf: dict[str, dict[str, pd.DataFrame]],
+        aux_data: dict[str, Any] | None = None,
+    ) -> BacktestResult:
+        """
+        Intraday runner. Key differences from _run_futures:
+        - Calls generate_signals_mtf (multi-timeframe signal generation)
+        - Session filter: signals only processed during active crypto sessions
+        - Daily kill switch: halt new entries if daily PnL < -max_daily_loss_pct
+        - Max trades per day per symbol: halt entries after max_trades_per_day
+        """
+        from itertools import groupby
+        from collections import defaultdict
+
+        result = BacktestResult(
+            strategy_name=strategy.name,
+            initial_capital=self.cfg.backtest.initial_capital_per_strategy,
+            mode="intraday",
+        )
+        risk = RiskEngine(strategy.name, self.cfg)
+        exec_engine = PaperExecutionEngine(strategy.name, self.cfg)
+        store = StateStore(strategy.name)
+
+        max_daily_loss = self.cfg.risk.max_daily_loss_pct
+        max_trades_day = self.cfg.risk.max_trades_per_day
+        session_filter = self.cfg.risk.session_filter
+
+        # Session windows (UTC hours): Asia, London, NY, NY Close
+        _SESSIONS = [(0, 8), (8, 12), (13, 17), (17, 22)]
+
+        def _in_session(ts: datetime) -> bool:
+            h = ts.hour
+            return any(s <= h < e for s, e in _SESSIONS)
+
+        # Generate signals via MTF interface
+        signal_map: dict[tuple[str, datetime], Signal] = {}
+        for symbol, df in candles_by_symbol.items():
+            if candles_by_tf.get(symbol):
+                sigs = strategy.generate_signals_mtf(candles_by_tf[symbol], aux_data)
+            else:
+                sigs = strategy.generate_signals(df, aux_data)
+            for sig in sigs:
+                signal_map[(symbol, sig.timestamp)] = sig
+
+        timeline: list[tuple] = []
+        for symbol, df in candles_by_symbol.items():
+            for row in df.itertuples(index=False):
+                timeline.append((row.timestamp, symbol, row.open, row.high, row.low, row.close))
+        timeline.sort(key=lambda x: x[0])
+
+        equity = self.cfg.backtest.initial_capital_per_strategy
+        daily_pnl: dict = defaultdict(float)
+        daily_trades: dict = defaultdict(int)   # (date, symbol) → count
+
+        for ts, group in groupby(timeline, key=lambda x: x[0]):
+            group_items = list(group)
+            ts_fills: list[Fill] = []
+
+            for _, symbol, op, hi, lo, cl in group_items:
+                risk.record_price(symbol, cl)
+                new_fills = exec_engine.process_candle(
+                    symbol=symbol, timestamp=ts,
+                    open_=op, high=hi, low=lo, close=cl,
+                )
+                ts_fills.extend(new_fills)
+
+                sig = signal_map.get((symbol, ts))
+                if sig is None:
+                    continue
+
+                if session_filter and not _in_session(ts):
+                    continue
+
+                today = ts.date()
+                if sig.direction in ("EXIT_LONG", "EXIT_SHORT"):
+                    exec_engine.schedule_exit(symbol)
+                else:
+                    # Kill switch
+                    if max_daily_loss > 0:
+                        initial = self.cfg.backtest.initial_capital_per_strategy
+                        if daily_pnl[today] / initial < -max_daily_loss:
+                            continue
+                    # Max trades/day
+                    if max_trades_day > 0 and daily_trades[(today, symbol)] >= max_trades_day:
+                        continue
+
+                    decision = risk.evaluate(sig)
+                    if decision.approved:
+                        exec_engine.schedule_entry(decision)
+                        daily_trades[(today, symbol)] += 1
+                        risk.open_positions[symbol] = None
+
+            for fill in ts_fills:
+                if fill.pnl is not None:
+                    equity += fill.pnl
+                    daily_pnl[fill.timestamp.date()] += fill.pnl
+                    if fill.symbol in risk.open_positions and risk.open_positions[fill.symbol] is None:
+                        del risk.open_positions[fill.symbol]
+                store.record_fill(fill)
+                result.fills.append(fill)
+
+            risk.open_positions = {k: v for k, v in exec_engine.open_positions.items() if v is not None}
+            risk.update_equity(equity)
+            store.record_equity(ts, equity)
+            result.equity_curve.append((ts, equity))
+
+        last_ts = timeline[-1][0] if timeline else datetime.utcnow()
+        for symbol, df in candles_by_symbol.items():
+            last_row = df.iloc[-1]
+            fill = exec_engine.close_at_end(symbol, last_ts, float(last_row["close"]))
+            if fill:
+                if fill.pnl:
+                    equity += fill.pnl
+                store.record_fill(fill)
+                result.fills.append(fill)
+
+        store.close()
+        self.compute_metrics(result, bars_per_day=288)   # 5m candles = 288/day
+        return result
+
     @staticmethod
     def compute_metrics(result: BacktestResult, bars_per_day: int = 6) -> None:
         """
