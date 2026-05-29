@@ -48,7 +48,7 @@ def optimize(
     Path(storage_path).parent.mkdir(parents=True, exist_ok=True)
     storage_url = f"sqlite:///{storage_path}"
 
-    runner = BacktestRunner(config)
+    runner = BacktestRunner(config, mode=config.mode)
 
     def _score(result: BacktestResult) -> float:
         if objective_fn is not None:

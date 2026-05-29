@@ -43,10 +43,11 @@ def run_walk_forward(
     config: Config,
     aux_data: dict | None = None,
     n_trials_per_window: int = 50,          # fewer trials per window for speed
+    objective_fn=None,
 ) -> WalkForwardResult:
     """Run walk-forward validation. Returns WalkForwardResult."""
     wf = config.walk_forward
-    runner = BacktestRunner(config)
+    runner = BacktestRunner(config, mode=config.mode)
     windows: list[WalkForwardWindow] = []
 
     # Get full date range from candles — use vectorised min/max, never iterrows
@@ -77,6 +78,7 @@ def run_walk_forward(
         best_params = optimize(
             strategy_cls, train_candles, config, aux_data,
             n_trials=n_trials_per_window,
+            objective_fn=objective_fn,
         )
 
         # Evaluate on test window with best params

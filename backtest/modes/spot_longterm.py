@@ -93,7 +93,7 @@ def _run_single(
     dummy.params = {}
     default_params = dummy.default_params()
 
-    initial = runner.run(strategy_cls(default_params), candles_by_symbol, candles_by_tf, aux_data)
+    initial = runner.run(strategy_cls(default_params), candles_by_symbol, aux_data, candles_by_tf)
 
     best_params = default_params
     calmar = _calmar_ratio(initial)
@@ -105,10 +105,10 @@ def _run_single(
             objective_fn=_calmar_ratio,
         )
 
-    final = runner.run(strategy_cls(best_params), candles_by_symbol, candles_by_tf, aux_data)
+    final = runner.run(strategy_cls(best_params), candles_by_symbol, aux_data, candles_by_tf)
     wf = None
     if not skip_wf:
-        wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20)
+        wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20, objective_fn=_calmar_ratio)
     sens = None
     if not skip_sensitivity:
         sens = analyze(strategy_cls, best_params, candles_by_symbol, cfg, aux_data)

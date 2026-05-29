@@ -26,6 +26,12 @@ from crypto_bot.core.execution.paper import PaperExecutionEngine
 from crypto_bot.core.state.store import StateStore
 from crypto_bot.core.execution.models import Fill
 
+_TF_TO_BARS_PER_DAY: dict[str, float] = {
+    "1m": 1440.0, "3m": 480.0, "5m": 288.0, "15m": 96.0, "30m": 48.0,
+    "1h": 24.0, "2h": 12.0, "4h": 6.0, "6h": 4.0, "8h": 3.0, "12h": 2.0,
+    "1d": 1.0, "3d": 1 / 3, "1w": 1 / 5,
+}
+
 
 @dataclass
 class BacktestResult:
@@ -155,6 +161,8 @@ class BacktestRunner:
         # Close any open positions at end of data
         last_ts = timeline[-1][0] if timeline else datetime.utcnow()
         for symbol, df in candles_by_symbol.items():
+            if len(df) == 0:
+                continue
             last_row = df.iloc[-1]
             fill = exec_engine.close_at_end(symbol, last_ts, float(last_row["close"]))
             if fill:
@@ -164,7 +172,7 @@ class BacktestRunner:
                 result.fills.append(fill)
 
         store.close()
-        self.compute_metrics(result, bars_per_day=6)   # 4h candles = 6/day
+        self.compute_metrics(result, bars_per_day=_TF_TO_BARS_PER_DAY.get(self.cfg.backtest.active_primary_tf, 6.0))
         return result
 
     def _run_spot(
@@ -262,6 +270,8 @@ class BacktestRunner:
 
         last_ts = timeline[-1][0] if timeline else datetime.utcnow()
         for symbol, df in candles_by_symbol.items():
+            if len(df) == 0:
+                continue
             last_row = df.iloc[-1]
             fill = exec_engine.close_at_end(symbol, last_ts, float(last_row["close"]))
             if fill:
@@ -271,7 +281,7 @@ class BacktestRunner:
                 result.fills.append(fill)
 
         store.close()
-        self.compute_metrics(result, bars_per_day=1)   # 1d/1w candles
+        self.compute_metrics(result, bars_per_day=_TF_TO_BARS_PER_DAY.get(self.cfg.backtest.active_primary_tf, 1.0))
         return result
 
     def _run_intraday(
@@ -330,10 +340,14 @@ class BacktestRunner:
         equity = self.cfg.backtest.initial_capital_per_strategy
         daily_pnl: dict = defaultdict(float)
         daily_trades: dict = defaultdict(int)   # (date, symbol) → count
+        day_open_equity: dict = {}              # date → equity at start of that day
 
         for ts, group in groupby(timeline, key=lambda x: x[0]):
             group_items = list(group)
             ts_fills: list[Fill] = []
+            today = ts.date()
+            if today not in day_open_equity:
+                day_open_equity[today] = equity
 
             for _, symbol, op, hi, lo, cl in group_items:
                 risk.record_price(symbol, cl)
@@ -350,14 +364,12 @@ class BacktestRunner:
                 if session_filter and not _in_session(ts):
                     continue
 
-                today = ts.date()
                 if sig.direction in ("EXIT_LONG", "EXIT_SHORT"):
                     exec_engine.schedule_exit(symbol)
                 else:
-                    # Kill switch
-                    if max_daily_loss > 0:
-                        initial = self.cfg.backtest.initial_capital_per_strategy
-                        if daily_pnl[today] / initial < -max_daily_loss:
+                    # Kill switch — compare daily loss against equity at start of that day
+                    if max_daily_loss > 0 and day_open_equity[today] > 0:
+                        if daily_pnl[today] / day_open_equity[today] < -max_daily_loss:
                             continue
                     # Max trades/day
                     if max_trades_day > 0 and daily_trades[(today, symbol)] >= max_trades_day:
@@ -385,6 +397,8 @@ class BacktestRunner:
 
         last_ts = timeline[-1][0] if timeline else datetime.utcnow()
         for symbol, df in candles_by_symbol.items():
+            if len(df) == 0:
+                continue
             last_row = df.iloc[-1]
             fill = exec_engine.close_at_end(symbol, last_ts, float(last_row["close"]))
             if fill:
@@ -394,7 +408,7 @@ class BacktestRunner:
                 result.fills.append(fill)
 
         store.close()
-        self.compute_metrics(result, bars_per_day=288)   # 5m candles = 288/day
+        self.compute_metrics(result, bars_per_day=_TF_TO_BARS_PER_DAY.get(self.cfg.backtest.active_primary_tf, 288.0))
         return result
 
     @staticmethod

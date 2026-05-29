@@ -39,7 +39,7 @@ def analyze(
     config: Config,
     aux_data: dict | None = None,
 ) -> SensitivityResult:
-    runner = BacktestRunner(config)
+    runner = BacktestRunner(config, mode=config.mode)
     base_strategy = strategy_cls(best_params)
     base_result = runner.run(base_strategy, candles_by_symbol, aux_data)
     base_score = base_result.composite_score

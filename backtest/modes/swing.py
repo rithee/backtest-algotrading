@@ -80,14 +80,14 @@ def _run_single(
     dummy.params = {}
     default_params = dummy.default_params()
 
-    initial = runner.run(strategy_cls(default_params), candles_by_symbol, candles_by_tf, aux_data)
+    initial = runner.run(strategy_cls(default_params), candles_by_symbol, aux_data, candles_by_tf)
 
     best_params = default_params
     if initial.composite_score <= 0 or initial.trades_per_year < cfg.optimization.min_trades_per_year:
         print(f"[swing/{strategy_cls_name}] composite={initial.composite_score:.4f} — optimising")
         best_params = optimize(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials=n_trials)
 
-    final = runner.run(strategy_cls(best_params), candles_by_symbol, candles_by_tf, aux_data)
+    final = runner.run(strategy_cls(best_params), candles_by_symbol, aux_data, candles_by_tf)
     wf = None
     if not skip_wf:
         wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=30)
@@ -96,19 +96,29 @@ def _run_single(
         sens = analyze(strategy_cls, best_params, candles_by_symbol, cfg, aux_data)
 
     criteria = cfg.promotion_criteria
-    promoted = (
-        wf is not None
-        and wf.oos_sharpe >= criteria.min_sharpe_oos
-        and wf.oos_max_drawdown <= criteria.max_drawdown_pct
-        and wf.oos_profit_factor >= criteria.min_profit_factor
-        and final.trades_per_year >= criteria.min_trades_per_year
-        and (sens is None or sens.is_robust)
-    )
-    reason = "" if promoted else (
-        "no_wf" if wf is None else
-        f"oos_sharpe={wf.oos_sharpe:.2f}, dd={wf.oos_max_drawdown:.1%}, "
-        f"pf={wf.oos_profit_factor:.2f}"
-    )
+    if wf is not None:
+        promoted = (
+            wf.oos_sharpe >= criteria.min_sharpe_oos
+            and wf.oos_max_drawdown <= criteria.max_drawdown_pct
+            and wf.oos_profit_factor >= criteria.min_profit_factor
+            and final.trades_per_year >= criteria.min_trades_per_year
+            and (sens is None or sens.is_robust)
+        )
+        reason = "" if promoted else (
+            f"oos_sharpe={wf.oos_sharpe:.2f}, dd={wf.oos_max_drawdown:.1%}, "
+            f"pf={wf.oos_profit_factor:.2f}"
+        )
+    else:
+        promoted = (
+            final.sharpe_ratio >= criteria.min_sharpe_oos
+            and final.max_drawdown_pct <= criteria.max_drawdown_pct
+            and final.trades_per_year >= criteria.min_trades_per_year
+            and (sens is None or sens.is_robust)
+        )
+        reason = "" if promoted else (
+            f"sharpe={final.sharpe_ratio:.2f}, dd={final.max_drawdown_pct:.1%}, "
+            f"trades/yr={final.trades_per_year:.0f}"
+        )
     return SwingStrategyResult(strategy_cls_name, final, best_params, wf, sens, promoted, reason)
 
 

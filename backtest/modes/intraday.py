@@ -98,7 +98,7 @@ def _run_single(
     dummy.params = {}
     default_params = dummy.default_params()
 
-    initial = runner.run(strategy_cls(default_params), candles_by_symbol, candles_by_tf, aux_data)
+    initial = runner.run(strategy_cls(default_params), candles_by_symbol, aux_data, candles_by_tf)
 
     best_params = default_params
     score = _fee_adjusted_sharpe(initial)
@@ -110,13 +110,13 @@ def _run_single(
             objective_fn=_fee_adjusted_sharpe,
         )
 
-    final = runner.run(strategy_cls(best_params), candles_by_symbol, candles_by_tf, aux_data)
+    final = runner.run(strategy_cls(best_params), candles_by_symbol, aux_data, candles_by_tf)
 
     # Walk-forward
     wf: Optional[WalkForwardResult] = None
     if not skip_wf:
         from backtest.walk_forward import run_walk_forward
-        wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20)
+        wf = run_walk_forward(strategy_cls, candles_by_symbol, cfg, aux_data, n_trials_per_window=20, objective_fn=_fee_adjusted_sharpe)
 
     # Sensitivity
     sens: Optional[SensitivityResult] = None
