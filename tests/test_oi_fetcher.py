@@ -1,8 +1,14 @@
 """Tests for fetch_open_interest — uses a mock to avoid real network calls."""
 import pandas as pd
 import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 from crypto_bot.core.data.binance_history import fetch_open_interest
+
+# Use dates within the 30-day retention window so the cutoff guard doesn't skip the fetch.
+_TODAY = datetime.now(tz=timezone.utc)
+_START = (_TODAY - timedelta(days=15)).strftime("%Y-%m-%d")
+_END   = (_TODAY - timedelta(days=5)).strftime("%Y-%m-%d")
 
 
 class TestFetchOpenInterest:
@@ -29,7 +35,7 @@ class TestFetchOpenInterest:
         ]
 
         with patch("crypto_bot.core.data.binance_history.Client", return_value=mock_client):
-            result = fetch_open_interest("BTCUSDT", "4h", "2020-09-14", "2020-09-16")
+            result = fetch_open_interest("BTCUSDT", "4h", _START, _END)
 
         assert isinstance(result, pd.Series)
         assert len(result) == 5
@@ -45,7 +51,7 @@ class TestFetchOpenInterest:
         ]
 
         with patch("crypto_bot.core.data.binance_history.Client", return_value=mock_client):
-            result = fetch_open_interest("BTCUSDT", "4h", "2020-09-14", "2020-09-16")
+            result = fetch_open_interest("BTCUSDT", "4h", _START, _END)
 
         assert result.dtype == float
 
@@ -57,7 +63,7 @@ class TestFetchOpenInterest:
         mock_client.futures_open_interest_hist.return_value = []
 
         with patch("crypto_bot.core.data.binance_history.Client", return_value=mock_client):
-            result = fetch_open_interest("BTCUSDT", "4h", "2020-09-14", "2020-09-15")
+            result = fetch_open_interest("BTCUSDT", "4h", _START, _END)
 
         assert isinstance(result, pd.Series)
         assert len(result) == 0
@@ -73,8 +79,8 @@ class TestFetchOpenInterest:
         ]
 
         with patch("crypto_bot.core.data.binance_history.Client", return_value=mock_client):
-            fetch_open_interest("BTCUSDT", "4h", "2020-09-14", "2020-09-16")
-            fetch_open_interest("BTCUSDT", "4h", "2020-09-14", "2020-09-16")
+            fetch_open_interest("BTCUSDT", "4h", _START, _END)
+            fetch_open_interest("BTCUSDT", "4h", _START, _END)
 
         # futures_open_interest_hist called twice (data + empty), not more
         assert mock_client.futures_open_interest_hist.call_count == 2

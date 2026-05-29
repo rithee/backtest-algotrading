@@ -61,7 +61,7 @@ def fetch_macro(start: str, end: str) -> pd.DataFrame | None:
         except Exception as exc:
             warnings.warn(f"FRED fetch failed ({_FRED_SERIES}): {exc}")
     else:
-        warnings.warn("FRED_API_KEY not set — skipping real yield data")
+        print("[macro] FRED_API_KEY not set — real_yield_10y column omitted (set FRED_API_KEY to include it)")
 
     if not frames:
         return None

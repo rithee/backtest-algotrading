@@ -4,7 +4,7 @@ Cache key: data/cache/<symbol>_<timeframe>_<start>_<end>.parquet
 """
 from __future__ import annotations
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import pandas as pd
 from binance.client import Client
@@ -167,6 +167,13 @@ def fetch_open_interest(
     """
     import warnings
     from binance.exceptions import BinanceAPIException
+
+    # Binance OI history endpoint only retains ~30 days of data.
+    # Skip the network call entirely for historical date ranges — no key can fix this.
+    _cutoff = datetime.now(tz=timezone.utc) - timedelta(days=30)
+    _end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    if _end_dt < _cutoff:
+        return None
 
     cache = CACHE_DIR / f"{symbol}_oi_{timeframe}_{start_date}_{end_date}.parquet"
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
