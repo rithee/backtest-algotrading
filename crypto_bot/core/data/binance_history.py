@@ -157,12 +157,17 @@ def fetch_open_interest(
     end_date: str,
     api_key: str = "",
     api_secret: str = "",
-) -> pd.Series:
+) -> "pd.Series | None":
     """
     Fetch historical open interest from Binance Futures.
     Returns pd.Series with timestamp index and float values, name='open_interest'.
     Cached to data/cache/<symbol>_oi_<timeframe>_<start>_<end>.parquet.
+    Returns None if the endpoint rejects the request (e.g. startTime too old —
+    Binance OI history only retains a rolling ~30-day window).
     """
+    import warnings
+    from binance.exceptions import BinanceAPIException
+
     cache = CACHE_DIR / f"{symbol}_oi_{timeframe}_{start_date}_{end_date}.parquet"
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -173,39 +178,47 @@ def fetch_open_interest(
         s.name = "open_interest"
         return s
 
-    client     = Client(api_key, api_secret)
-    period     = _OI_PERIOD_MAP.get(timeframe, "4h")
-    tf_ms      = _TIMEFRAME_MS.get(timeframe, 14_400_000)
-    start_ms   = _to_ms(start_date)
-    end_ms     = _to_ms(end_date)
-    batch_size = 500
+    try:
+        client     = Client(api_key, api_secret)
+        period     = _OI_PERIOD_MAP.get(timeframe, "4h")
+        tf_ms      = _TIMEFRAME_MS.get(timeframe, 14_400_000)
+        start_ms   = _to_ms(start_date)
+        end_ms     = _to_ms(end_date)
+        batch_size = 500
 
-    records: list[dict] = []
-    current_ms = start_ms
+        records: list[dict] = []
+        current_ms = start_ms
 
-    while current_ms < end_ms:
-        batch = client.futures_open_interest_hist(
-            symbol=symbol,
-            period=period,
-            startTime=current_ms,
-            endTime=min(current_ms + batch_size * tf_ms, end_ms),
-            limit=batch_size,
+        while current_ms < end_ms:
+            batch = client.futures_open_interest_hist(
+                symbol=symbol,
+                period=period,
+                startTime=current_ms,
+                endTime=min(current_ms + batch_size * tf_ms, end_ms),
+                limit=batch_size,
+            )
+            if not batch:
+                break
+            for item in batch:
+                ts = datetime.fromtimestamp(
+                    item["timestamp"] / 1000, tz=timezone.utc
+                ).replace(tzinfo=None)
+                records.append({
+                    "timestamp":     ts,
+                    "open_interest": float(item["sumOpenInterest"]),
+                })
+            last_ts = batch[-1]["timestamp"]
+            if last_ts >= end_ms:
+                break
+            current_ms = last_ts + 1
+            time.sleep(0.1)
+
+    except BinanceAPIException as exc:
+        warnings.warn(
+            f"Binance OI fetch failed for {symbol} ({start_date}→{end_date}): {exc}. "
+            "The OI history endpoint only retains ~30 days — skipping OI data."
         )
-        if not batch:
-            break
-        for item in batch:
-            ts = datetime.fromtimestamp(
-                item["timestamp"] / 1000, tz=timezone.utc
-            ).replace(tzinfo=None)
-            records.append({
-                "timestamp":     ts,
-                "open_interest": float(item["sumOpenInterest"]),
-            })
-        last_ts = batch[-1]["timestamp"]
-        if last_ts >= end_ms:
-            break
-        current_ms = last_ts + 1
-        time.sleep(0.1)
+        return None
 
     if not records:
         return pd.Series(dtype=float, name="open_interest")
